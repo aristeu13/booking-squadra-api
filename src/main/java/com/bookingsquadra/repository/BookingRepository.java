@@ -33,4 +33,6 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     );
 
     Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
+
+    Optional<Booking> findByTransactionId(String transactionId);
 }

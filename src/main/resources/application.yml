@@ -64,3 +64,6 @@ app:
     from: ${MAILGUN_FROM:Squadra <no-reply@booking-squadra.com>}
     base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
     otp-template: ${MAILGUN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}
+  payments:
+    webhook:
+      token: ${PAYMENTS_WEBHOOK_TOKEN:whsec_cFfxxmIl_W2ehmzMaP4OzfOir-V0Z9tgvtSlZhZX4TQ}
