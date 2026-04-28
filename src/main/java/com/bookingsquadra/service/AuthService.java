@@ -45,6 +45,7 @@ public class AuthService {
                         .email(email)
                         .hasUsedGoogleAuth(false)
                         .role(User.ROLE_USER)
+                        .status(User.STATUS_ACTIVE)
                         .build()));
 
         String code = generateCode();

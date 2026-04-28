@@ -61,4 +61,4 @@ app:
     domain: ${MAILGUN_DOMAIN:}
     from: ${MAILGUN_FROM:Squadra <no-reply@booking-squadra.com>}
     base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
-    login-otp-template: ${MAILGUN_LOGIN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}
+    otp-template: ${MAILGUN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}

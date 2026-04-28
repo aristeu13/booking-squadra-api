@@ -8,5 +8,5 @@ public record MailgunProperties(
         String domain,
         String from,
         String baseUrl,
-        String loginOtpTemplate
+        String otpTemplate
 ) {}

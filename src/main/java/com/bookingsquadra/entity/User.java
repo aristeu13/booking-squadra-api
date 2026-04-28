@@ -27,6 +27,9 @@ public class User {
     public static final String ROLE_USER = "user";
     public static final String ROLE_ADMIN = "admin";
 
+    public static final String STATUS_ACTIVE = "active";
+    public static final String STATUS_DELETED = "deleted";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(columnDefinition = "uuid")
@@ -45,6 +48,9 @@ public class User {
 
     @Column(nullable = false)
     private String role;
+
+    @Column(nullable = false)
+    private String status;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;

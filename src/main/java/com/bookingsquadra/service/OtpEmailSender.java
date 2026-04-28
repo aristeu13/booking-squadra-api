@@ -20,12 +20,29 @@ public class OtpEmailSender {
         this.props = props;
     }
 
+    public void sendDeleteAccountOtp(String to, String code) {
+        Message message = Message.builder()
+                .from(props.from())
+                .to(to)
+                .subject("Confirme a exclusão da sua conta Squadra")
+                .template(props.otpTemplate())
+                .mailgunVariables(Map.of("otp_code", code))
+                .build();
+
+        try {
+            mailgunMessagesApi.sendMessage(props.domain(), message);
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY, "Failed to deliver OTP email", e);
+        }
+    }
+
     public void sendLoginOtp(String to, String code) {
         Message message = Message.builder()
                 .from(props.from())
                 .to(to)
                 .subject("Seu código de verificação Squadra")
-                .template(props.loginOtpTemplate())
+                .template(props.otpTemplate())
                 .mailgunVariables(Map.of("otp_code", code))
                 .build();
 
