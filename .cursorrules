@@ -1,0 +1,151 @@
+# Project Context: Booking Squadra Backend
+
+A Spring Boot REST API for booking sports venues/courts. Authentication is passwordless via OTP delivered by email (Mailgun), and authorization is JWT-based.
+
+## Tech Stack
+- Java 21
+- Spring Boot 3.4 (Web MVC, Data JPA, Security, Validation)
+- PostgreSQL 16 + extensions: `cube`, `earthdistance`, `btree_gist`
+- Flyway (migrations under `src/main/resources/db/migration`)
+- Hibernate ORM
+- JJWT (`io.jsonwebtoken:jjwt-*` 0.12.x)
+- Mailgun Java SDK
+- springdoc-openapi + Scalar UI (`/scalar`)
+- Gradle (Groovy DSL)
+- Lombok (compile-time only)
+
+## Project Layout
+- `controller/` — `@RestController`s, request mapping, no business logic
+- `service/` — business logic, transactional boundaries, cross-entity orchestration
+- `repository/` — Spring Data JPA repositories
+- `entity/` — JPA `@Entity` classes mapped 1:1 to DB tables
+- `dto/` — request and response records (immutable)
+- `config/` — `@Configuration` beans (Security, Mailgun, OpenAPI, etc.)
+- `security/` — JWT filter, JWT util, Spring Security plumbing
+
+## Architectural Rules
+- Strict 3-tier: `controller -> service -> repository`. Controllers never touch repositories directly.
+- Never expose JPA entities through controllers. Always map to/from DTOs.
+- Prefer Java `record` for DTOs. Use Bean Validation annotations (`@Valid`, `@NotBlank`, `@Email`, `@Size`, etc.) on request DTOs.
+- Use constructor injection, never field injection. No `@Autowired` on fields.
+- Mark services that mutate state with `@Transactional`; read-only services with `@Transactional(readOnly = true)`.
+- Throw `ResponseStatusException` (or a domain exception handled by `@ControllerAdvice`) for 4xx/5xx — never return `null` to signal errors.
+- Keep configuration in `application.yml` exposed via `@ConfigurationProperties` records (see `MailgunProperties`). Avoid scattering `@Value` lookups.
+
+## Database & Migrations
+- All schema changes go through Flyway migrations: `V<n>__<snake_case_description>.sql` under `src/main/resources/db/migration`. Never modify a checked-in migration — always add a new one.
+- `spring.jpa.hibernate.ddl-auto=validate` is enforced. Entity mappings must match the schema or the app will fail to start.
+- Primary keys are `UUID` with `gen_random_uuid()` defaults (except `cities.id` which is `INT`). Map with `@Id @GeneratedValue(strategy = GenerationType.UUID)` or let the DB default fire and use `insertable=false, updatable=false` if needed.
+- Timestamps: `created_at` and `updated_at` are `TIMESTAMPTZ NOT NULL DEFAULT NOW()`. `updated_at` is auto-bumped by the `set_updated_at()` trigger — do **not** set it from Java; mark with `@Column(updatable = false, insertable = false)` or refresh after write.
+- All times stored in UTC (`spring.jackson.time-zone: UTC`, Hibernate `jdbc.time_zone: UTC`). Use `OffsetDateTime` / `Instant` in Java, never `LocalDateTime` for timestamp columns.
+- Money is stored as **integer cents** (`amount_cents`, `price_cents`). Never use `double`/`float` for money. Use `int` or `long`.
+- Times-of-day are `TIME` → `java.time.LocalTime`. Dates are `DATE` → `java.time.LocalDate`. `day_of_week` is `SMALLINT` 0–6 where **0 = Sunday**.
+
+## Schema (current, V1)
+```sql
+-- users: account record. Passwordless auth — auth happens via user_otps.
+users(id UUID PK, name TEXT, email TEXT UNIQUE, phone TEXT,
+      has_used_google_auth BOOLEAN, created_at, updated_at)
+
+-- user_otps: one-time codes for login / email verification / account deletion.
+-- otp_code is a HASH (e.g. SHA-256 hex / bcrypt), never the plaintext code.
+-- single-use: set used_at on consumption. expires_at enforces TTL.
+user_otps(id UUID PK, user_id UUID FK->users CASCADE,
+          otp_code VARCHAR(64),
+          purpose TEXT CHECK ('login'|'email_verification'|'delete_account'),
+          expires_at TIMESTAMPTZ, used_at TIMESTAMPTZ, created_at)
+  -- Lookup index is partial (used_at IS NULL) — query only unused codes.
+
+-- venues: a sports facility (tenant of bookings).
+venues(id UUID PK, name, slug TEXT UNIQUE, description, image_url,
+       address, city, state_code CHAR(2),
+       latitude FLOAT8 [-90,90], longitude FLOAT8 [-180,180],
+       sports TEXT[], amenities JSONB,
+       price_cents INT >= 0, slot_duration_minutes SMALLINT > 0,
+       active BOOLEAN, created_at, updated_at)
+
+-- courts: bookable units inside a venue.
+courts(id UUID PK, venue_id UUID FK->venues CASCADE, name,
+       surface_type CHECK ('sand'|'synthetic'|'hard'|'clay'|'padel'|'wood'|'grass'),
+       is_indoor BOOLEAN, sort_order SMALLINT, active BOOLEAN, created_at, updated_at)
+
+-- operating_hours: weekly hours per venue. UNIQUE(venue_id, day_of_week).
+-- Schema is locked — do NOT add columns/constraints here.
+operating_hours(id, venue_id, day_of_week 0..6, open_time TIME, close_time TIME, ts)
+
+-- bookings: a reservation OR an admin block. user_id NULL => block (booking_type='block').
+-- Overlap prevention is enforced by GiST EXCLUDE constraint at the DB level
+-- (only across status IN ('pending','confirmed')). Catch SQLState 23P01 in services
+-- and surface as 409 Conflict.
+bookings(id, booking_type ('reservation'|'block'),
+         user_id FK->users SET NULL, court_id FK->courts RESTRICT,
+         booking_date DATE, start_time TIME, end_time TIME (start<end),
+         status ('pending'|'confirmed'|'completed'|'cancelled'),
+         payment_method ('pix'|'local'), amount_cents INT >= 0,
+         transaction_id TEXT (UNIQUE when not null),
+         note, cancelled_at, cancel_reason, created_at, updated_at)
+
+-- recurring_time_blocks: weekly maintenance/internal blocks.
+-- court_id NULL => applies to ALL courts of the venue.
+recurring_time_blocks(id, venue_id, court_id?, day_of_week 0..6,
+                      start_time TIME, end_time TIME (start<end),
+                      reason, active, created_at, updated_at)
+
+-- recurring_time_block_exceptions: per-date overrides.
+-- action='release' => block does NOT apply that date; 'block' => extra block on that date.
+recurring_time_block_exceptions(id, recurring_block_id FK CASCADE,
+                                exception_date DATE, action ('release'|'block'),
+                                note, ts) UNIQUE(recurring_block_id, exception_date)
+
+-- cancel_policies: 1:1 with venue. Refund tiers for PIX, cutoff for local payment.
+cancel_policies(id, venue_id UNIQUE FK->venues CASCADE,
+                pix_full_refund_hours, pix_partial_refund_hours,
+                pix_partial_refund_percent 0..100,
+                local_cancel_hours, no_show_pix_threshold, ts)
+
+-- cities: IBGE-style read-only reference data (INT id, siafi_id, ddd, timezone).
+cities(id INT PK, name, state_code, latitude, longitude,
+       is_capital, siafi_id UNIQUE, ddd, timezone)
+```
+
+## Domain Rules Derived From the Schema
+- **Booking overlap**: never check overlap manually in Java as the source of truth — the `bookings_no_overlap` GiST EXCLUDE constraint is authoritative. Services should attempt the insert/update and translate Postgres SQLState `23P01` into HTTP 409.
+- **Block bookings**: `booking_type='block'` rows have `user_id` nullable (admin-created) but still must obey overlap with reservations. Use the same `bookings` table — don't create a separate "blocks" table.
+- **Recurring blocks** apply to a venue's courts on `day_of_week`. To compute the effective availability for a date, combine: `operating_hours` ∩ NOT(`recurring_time_blocks` minus 'release' exceptions plus 'block' exceptions) ∩ NOT(`bookings` with status pending/confirmed).
+- **OTP flow**:
+  - On request: hash the code (SHA-256 or bcrypt) and insert into `user_otps` with `expires_at = now + ttl`, `purpose`, and `used_at = NULL`. Send the plaintext code via Mailgun.
+  - On verify: look up by `(user_id, purpose, otp_code_hash)` filtered on `used_at IS NULL AND expires_at > now()` (this hits `user_otps_lookup_idx`). On success, set `used_at = now()` and issue a JWT.
+  - Never store or log the plaintext OTP code.
+- **Cancellation**: refund logic is determined by `cancel_policies` for the booking's venue and the `payment_method`. PIX has tiered refunds based on hours-before-start; local has a single cutoff.
+- **Slugs**: `venues.slug` is unique. Generate from `name` (kebab-case, ASCII-folded) and verify uniqueness on insert.
+- **Geo queries**: use `earthdistance` / `ll_to_earth` for "nearest venues" queries. The GiST indexes are already in place. Don't compute haversine in Java.
+- **Soft state**: there is no soft-delete column. Use `active BOOLEAN` on `venues`, `courts`, and `recurring_time_blocks` for hide-from-listing semantics. Cancelled bookings keep `status='cancelled'` plus `cancelled_at` / `cancel_reason`.
+
+## Security & Auth
+- Spring Security is **stateless** (`SessionCreationPolicy.STATELESS`); no CSRF, no sessions, no cookies.
+- `JwtAuthenticationFilter` runs before `UsernamePasswordAuthenticationFilter` and populates the `SecurityContext` from the `Authorization: Bearer <token>` header.
+- Permitted without auth: `/auth/**`, `/api-docs/**`, `/swagger-ui/**`, `/scalar/**`. Everything else requires a valid JWT.
+- JWT signing secret comes from `JWT_SECRET`; expiration from `JWT_EXPIRATION_MS`. Both must be set in production via env.
+- For OpenAPI: declare a `bearerAuth` HTTP/JWT security scheme so Scalar shows the auth panel. OTP endpoints (`/auth/otp/request`, `/auth/otp/verify`) should opt out via `@SecurityRequirements`.
+
+## API Conventions
+- Base path: no global prefix. Group by resource: `/auth/**`, `/venues`, `/courts`, `/bookings`, etc.
+- Use the right status codes: `200` for read, `201` for create (with `Location`), `202` when work is queued (e.g. OTP request), `204` for empty success, `409` for booking conflicts, `422` for validation failures that survive bean validation.
+- Pagination: prefer `Pageable` + `Page<T>` for list endpoints over rolling your own.
+- Money is always returned as integer cents on the wire; the client formats. Don't return floats.
+- All timestamps on the wire are ISO-8601 with offset (`OffsetDateTime`).
+
+## Migrations & Data Loading
+- New tables: add `created_at` + `updated_at` (`TIMESTAMPTZ NOT NULL DEFAULT NOW()`) and a `trg_<table>_updated_at` trigger calling `set_updated_at()`.
+- New enum-like columns: prefer `TEXT` + `CHECK (... IN (...))` over Postgres ENUMs (matches existing style — easier to evolve).
+- Reference data (e.g. seeding `cities`) should go into a separate `V<n>__seed_*.sql` migration, not mixed with schema DDL.
+
+## Testing
+- Use `spring-boot-starter-test` + `spring-security-test`. Prefer slice tests (`@DataJpaTest`, `@WebMvcTest`) over `@SpringBootTest` where possible.
+- Integration tests that exercise SQL constraints (especially `bookings_no_overlap` and CHECK constraints) must run against a real Postgres (Testcontainers), **not** H2. H2 does not support `tsrange`, GiST EXCLUDE, partial indexes, or the geo extensions used here.
+
+## Coding Conventions
+- Java naming: `camelCase` for fields/methods, `PascalCase` for types, `SCREAMING_SNAKE_CASE` for constants.
+- DB naming: `snake_case` tables and columns. JPA mappings should use `@Column(name = "...")` only when the camelCase ↔ snake_case convention isn't enough — but Hibernate's default physical naming strategy already converts, so usually no annotation is needed.
+- No comments that restate the code. Comments only for non-obvious WHY (constraints, invariants, workarounds).
+- No emojis in code, comments, or commit messages.

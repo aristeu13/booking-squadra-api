@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: booking-squadra-api
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/booking_squadra}
+    username: ${DB_USERNAME:booking_squadra}
+    password: ${DB_PASSWORD:booking_squadra}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: UTC
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: always
+    include-binding-errors: always
+
+springdoc:
+  api-docs:
+    path: /api-docs
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.bookingsquadra: ${LOG_LEVEL_APP:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
+    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:WARN}
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:change-me-change-me-change-me-change-me-change-me}
+      expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  mailgun:
+    api-key: ${MAILGUN_API_KEY:}
+    domain: ${MAILGUN_DOMAIN:}
+    from: ${MAILGUN_FROM:Squadra <no-reply@booking-squadra.com>}
+    base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
+    login-otp-template: ${MAILGUN_LOGIN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}
