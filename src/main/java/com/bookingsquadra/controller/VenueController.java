@@ -1,6 +1,7 @@
 package com.bookingsquadra.controller;
 
 import com.bookingsquadra.dto.BookingCountDto;
+import com.bookingsquadra.dto.CancelPolicyDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.dto.VenueResponseDto;
 import com.bookingsquadra.service.VenueService;
@@ -41,5 +42,10 @@ public class VenueController {
     @GetMapping("/{id}/bookings/count")
     public BookingCountDto bookingsCount(@PathVariable UUID id) {
         return venueService.countBookings(id);
+    }
+
+    @GetMapping("/{id}/cancel-policy")
+    public CancelPolicyDto cancelPolicy(@PathVariable UUID id) {
+        return venueService.getCancelPolicy(id);
     }
 }

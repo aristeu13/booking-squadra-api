@@ -7,6 +7,8 @@ import com.bookingsquadra.dto.CreateCourtDto;
 import com.bookingsquadra.dto.CreateOperatingHoursDto;
 import com.bookingsquadra.dto.CreateVenueDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
+import com.bookingsquadra.dto.UpdateCourtDto;
+import com.bookingsquadra.dto.UpdateVenueDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.entity.CancelPolicy;
 import com.bookingsquadra.entity.City;
@@ -124,6 +126,129 @@ public class AdminVenueService {
         return toDto(saved);
     }
 
+    @Transactional
+    public VenueDto updateVenue(UUID venueId, UpdateVenueDto dto) {
+        Venue venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
+        if (dto.name() != null) venue.setName(dto.name());
+        if (dto.slug() != null) venue.setSlug(dto.slug());
+        if (dto.description() != null) venue.setDescription(dto.description());
+        if (dto.imageUrl() != null) venue.setImageUrl(dto.imageUrl());
+        if (dto.address() != null) venue.setAddress(dto.address());
+        if (dto.cityId() != null) {
+            if (!cityRepository.existsById(dto.cityId())) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "City not found");
+            }
+            venue.setCityId(dto.cityId());
+        }
+        if (dto.latitude() != null) venue.setLatitude(dto.latitude());
+        if (dto.longitude() != null) venue.setLongitude(dto.longitude());
+        if (dto.sports() != null) venue.setSports(dto.sports().toArray(new String[0]));
+        if (dto.amenities() != null) venue.setAmenities(dto.amenities());
+        if (dto.priceCents() != null) venue.setPriceCents(dto.priceCents());
+        if (dto.slotDurationMinutes() != null) venue.setSlotDurationMinutes(dto.slotDurationMinutes());
+        if (dto.active() != null) venue.setActive(dto.active());
+        try {
+            venueRepository.saveAndFlush(venue);
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Slug already in use", e);
+        }
+        return toVenueDto(venue);
+    }
+
+    @Transactional
+    public void deactivateVenue(UUID venueId) {
+        Venue venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
+        venue.setActive(false);
+        venueRepository.save(venue);
+    }
+
+    @Transactional
+    public CourtDto updateCourt(UUID courtId, UpdateCourtDto dto) {
+        Court court = courtRepository.findById(courtId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Court not found"));
+        if (dto.name() != null) court.setName(dto.name());
+        if (dto.surfaceType() != null) court.setSurfaceType(dto.surfaceType());
+        if (dto.indoor() != null) court.setIndoor(dto.indoor());
+        if (dto.sortOrder() != null) court.setSortOrder(dto.sortOrder());
+        if (dto.active() != null) court.setActive(dto.active());
+        return toDto(courtRepository.save(court));
+    }
+
+    @Transactional
+    public void deactivateCourt(UUID courtId) {
+        Court court = courtRepository.findById(courtId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Court not found"));
+        court.setActive(false);
+        courtRepository.save(court);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperatingHoursDto> listOperatingHours(UUID venueId) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
+        }
+        return operatingHoursRepository.findByVenueId(venueId)
+                .stream()
+                .sorted((a, b) -> Short.compare(a.getDayOfWeek(), b.getDayOfWeek()))
+                .map(AdminVenueService::toDto)
+                .toList();
+    }
+
+    @Transactional
+    public OperatingHoursDto upsertOperatingHours(UUID venueId, short dayOfWeek, CreateOperatingHoursDto dto) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
+        }
+        if (dto.dayOfWeek() != dayOfWeek) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dayOfWeek must match path");
+        }
+        OperatingHours hours = operatingHoursRepository
+                .findByVenueIdAndDayOfWeek(venueId, dayOfWeek)
+                .orElseGet(() -> OperatingHours.builder()
+                        .venueId(venueId)
+                        .dayOfWeek(dayOfWeek)
+                        .build());
+        hours.setOpenTime(dto.openTime());
+        hours.setCloseTime(dto.closeTime());
+        return toDto(operatingHoursRepository.save(hours));
+    }
+
+    @Transactional
+    public void deleteOperatingHours(UUID venueId, short dayOfWeek) {
+        OperatingHours hours = operatingHoursRepository
+                .findByVenueIdAndDayOfWeek(venueId, dayOfWeek)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Operating hours not found"));
+        operatingHoursRepository.delete(hours);
+    }
+
+    @Transactional(readOnly = true)
+    public CancelPolicyDto getCancelPolicy(UUID venueId) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
+        }
+        return cancelPolicyRepository.findByVenueId(venueId)
+                .map(AdminVenueService::toDto)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Cancel policy not found"));
+    }
+
+    @Transactional
+    public CancelPolicyDto updateCancelPolicy(UUID venueId, CreateCancelPolicyDto dto) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
+        }
+        CancelPolicy policy = cancelPolicyRepository.findByVenueId(venueId)
+                .orElseGet(() -> CancelPolicy.builder().venueId(venueId).build());
+        policy.setPixFullRefundHours(dto.pixFullRefundHours());
+        policy.setPixPartialRefundHours(dto.pixPartialRefundHours());
+        policy.setPixPartialRefundPercent(dto.pixPartialRefundPercent());
+        policy.setLocalCancelHours(dto.localCancelHours());
+        policy.setNoShowPixThreshold(dto.noShowPixThreshold());
+        return toDto(cancelPolicyRepository.save(policy));
+    }
+
     private static void validateNoDuplicateDays(List<CreateOperatingHoursDto> hours) {
         Set<Short> seen = new HashSet<>();
         for (CreateOperatingHoursDto h : hours) {
@@ -133,6 +258,19 @@ public class AdminVenueService {
                         "Duplicate operating hours for day_of_week=" + h.dayOfWeek());
             }
         }
+    }
+
+    private VenueDto toVenueDto(Venue venue) {
+        City city = cityRepository.findById(venue.getCityId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "Venue city not found"));
+        List<Court> courts = courtRepository.findByVenueIdAndActiveTrueOrderBySortOrderAsc(venue.getId());
+        List<OperatingHours> hours = operatingHoursRepository.findByVenueId(venue.getId())
+                .stream()
+                .sorted((a, b) -> Short.compare(a.getDayOfWeek(), b.getDayOfWeek()))
+                .toList();
+        CancelPolicy policy = cancelPolicyRepository.findByVenueId(venue.getId()).orElse(null);
+        return toDto(venue, city, courts, hours, policy);
     }
 
     private Court buildCourt(UUID venueId, CreateCourtDto dto) {

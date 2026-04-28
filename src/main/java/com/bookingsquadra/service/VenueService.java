@@ -103,6 +103,17 @@ public class VenueService {
         return new BookingCountDto(venueId, venueRepository.countBookingsByVenueId(venueId));
     }
 
+    @Transactional(readOnly = true)
+    public CancelPolicyDto getCancelPolicy(UUID venueId) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
+        }
+        return cancelPolicyRepository.findByVenueId(venueId)
+                .map(VenueService::toPolicyDto)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Cancel policy not found"));
+    }
+
     private static VenueDto toVenueDto(
             Venue v,
             City city,
