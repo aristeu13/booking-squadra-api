@@ -20,5 +20,7 @@ public record VenueDto(
         Integer priceCents,
         Short slotDurationMinutes,
         Boolean active,
-        List<CourtDto> courts
+        List<CourtDto> courts,
+        List<OperatingHoursDto> operatingHours,
+        CancelPolicyDto cancelPolicy
 ) {}

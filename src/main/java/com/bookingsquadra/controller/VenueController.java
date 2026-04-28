@@ -1,6 +1,7 @@
 package com.bookingsquadra.controller;
 
 import com.bookingsquadra.dto.BookingCountDto;
+import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.dto.VenueResponseDto;
 import com.bookingsquadra.service.VenueService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,11 @@ public class VenueController {
             @RequestParam(name = "sports_filters", required = false) List<String> sportsFilters
     ) {
         return venueService.search(lat, lon, distanceKm, sportsFilters);
+    }
+
+    @GetMapping("/{id}")
+    public VenueDto getById(@PathVariable UUID id) {
+        return venueService.getById(id);
     }
 
     @GetMapping("/{id}/bookings/count")

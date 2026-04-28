@@ -4,6 +4,7 @@ import java.util.UUID;
 
 public interface VenueDistanceProjection {
     UUID getId();
+    String getSlug();
     String getName();
     String getDescription();
     String getImageUrl();

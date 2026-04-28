@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record VenueResponseDto(
         UUID id,
+        String slug,
         String name,
         String description,
         String imageUrl,

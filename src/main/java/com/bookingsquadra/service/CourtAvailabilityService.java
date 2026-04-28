@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +28,7 @@ public class CourtAvailabilityService {
 
     private static final int MINUTES_PER_DAY = 24 * 60;
     private static final Set<String> ACTIVE_STATUSES = Set.of("pending", "confirmed");
+    private static final DateTimeFormatter SLOT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final CourtRepository courtRepository;
     private final VenueRepository venueRepository;
@@ -49,7 +51,7 @@ public class CourtAvailabilityService {
     }
 
     @Transactional(readOnly = true)
-    public List<LocalTime> getAvailableSlots(UUID courtId, LocalDate date) {
+    public List<String> getAvailableSlots(UUID courtId, LocalDate date) {
         Court court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Court not found"));
 
@@ -91,7 +93,7 @@ public class CourtAvailabilityService {
                     .forEach(b -> blockedIntervals.add(blockInterval(b, target, date)));
         }
 
-        List<LocalTime> available = new ArrayList<>();
+        List<String> available = new ArrayList<>();
         for (int t = openMin; t + slotMinutes <= closeMin; t += slotMinutes) {
             int slotStart = t;
             int slotEnd = t + slotMinutes;
@@ -99,7 +101,7 @@ public class CourtAvailabilityService {
                 continue;
             }
             int normalized = slotStart % MINUTES_PER_DAY;
-            available.add(LocalTime.of(normalized / 60, normalized % 60));
+            available.add(LocalTime.of(normalized / 60, normalized % 60).format(SLOT_FORMAT));
         }
         return available;
     }

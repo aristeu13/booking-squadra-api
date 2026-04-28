@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,7 +23,7 @@ public class CourtController {
     }
 
     @GetMapping("/{courtId}/available-slots")
-    public List<LocalTime> availableSlots(
+    public List<String> availableSlots(
             @PathVariable UUID courtId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {

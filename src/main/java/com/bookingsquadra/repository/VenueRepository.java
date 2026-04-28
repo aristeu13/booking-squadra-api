@@ -18,6 +18,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
             WITH venue_distances AS (
                 SELECT
                     v.id,
+                    v.slug,
                     v.name,
                     v.description,
                     v.image_url,
@@ -48,6 +49,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
             )
             SELECT
                 vd.id            AS id,
+                vd.slug          AS slug,
                 vd.name          AS name,
                 vd.description   AS description,
                 vd.image_url     AS "imageUrl",
