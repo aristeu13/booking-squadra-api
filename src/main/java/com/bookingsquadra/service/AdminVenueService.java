@@ -9,10 +9,12 @@ import com.bookingsquadra.dto.CreateVenueDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.entity.CancelPolicy;
+import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
 import com.bookingsquadra.entity.Venue;
 import com.bookingsquadra.repository.CancelPolicyRepository;
+import com.bookingsquadra.repository.CityRepository;
 import com.bookingsquadra.repository.CourtRepository;
 import com.bookingsquadra.repository.OperatingHoursRepository;
 import com.bookingsquadra.repository.VenueRepository;
@@ -41,17 +43,20 @@ public class AdminVenueService {
             (short) 24, (short) 12, (short) 50, (short) 4, (short) 1
     );
 
+    private final CityRepository cityRepository;
     private final VenueRepository venueRepository;
     private final CourtRepository courtRepository;
     private final OperatingHoursRepository operatingHoursRepository;
     private final CancelPolicyRepository cancelPolicyRepository;
 
     public AdminVenueService(
+            CityRepository cityRepository,
             VenueRepository venueRepository,
             CourtRepository courtRepository,
             OperatingHoursRepository operatingHoursRepository,
             CancelPolicyRepository cancelPolicyRepository
     ) {
+        this.cityRepository = cityRepository;
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.operatingHoursRepository = operatingHoursRepository;
@@ -61,6 +66,9 @@ public class AdminVenueService {
     @Transactional
     public VenueDto createVenue(CreateVenueDto dto) {
         validateNoDuplicateDays(dto.operatingHours());
+        City city = cityRepository.findById(dto.cityId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_CONTENT, "City not found"));
 
         Venue venue = Venue.builder()
                 .name(dto.name())
@@ -68,8 +76,6 @@ public class AdminVenueService {
                 .description(dto.description() == null ? "" : dto.description())
                 .imageUrl(dto.imageUrl())
                 .address(dto.address())
-                .city(dto.city())
-                .stateCode(dto.stateCode())
                 .cityId(dto.cityId())
                 .latitude(dto.latitude())
                 .longitude(dto.longitude())
@@ -106,7 +112,7 @@ public class AdminVenueService {
                 : dto.cancelPolicy();
         CancelPolicy savedPolicy = cancelPolicyRepository.save(buildPolicy(saved.getId(), policyDto));
 
-        return toDto(saved, createdCourts, createdHours, savedPolicy);
+        return toDto(saved, city, createdCourts, createdHours, savedPolicy);
     }
 
     @Transactional
@@ -162,6 +168,7 @@ public class AdminVenueService {
 
     private static VenueDto toDto(
             Venue v,
+            City city,
             List<Court> courts,
             List<OperatingHours> hours,
             CancelPolicy policy
@@ -173,8 +180,10 @@ public class AdminVenueService {
                 v.getDescription(),
                 v.getImageUrl(),
                 v.getAddress(),
-                v.getCity(),
-                v.getStateCode(),
+                city.getId(),
+                city.getName(),
+                city.getStateCode(),
+                city.getTimezone(),
                 v.getLatitude(),
                 v.getLongitude(),
                 v.getSports() == null ? Collections.emptyList() : List.of(v.getSports()),

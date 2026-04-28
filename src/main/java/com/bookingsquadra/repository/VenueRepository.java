@@ -23,8 +23,10 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                     v.description,
                     v.image_url,
                     v.address,
-                    v.city,
-                    v.state_code,
+                    v.city_id,
+                    c.name AS city,
+                    c.state_code,
+                    c.timezone,
                     v.sports,
                     v.amenities,
                     v.price_cents,
@@ -41,6 +43,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                         )
                     END AS distance_km
                 FROM public.venues v
+                JOIN public.cities c ON c.id = v.city_id
                 WHERE v.active = true
                   AND (
                       CAST(:sports AS text) = ''
@@ -54,8 +57,10 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                 vd.description   AS description,
                 vd.image_url     AS "imageUrl",
                 vd.address       AS address,
+                vd.city_id       AS "cityId",
                 vd.city          AS city,
                 vd.state_code    AS "stateCode",
+                vd.timezone      AS timezone,
                 vd.sports        AS sports,
                 vd.amenities::text AS amenities,
                 vd.price_cents   AS "priceCents",

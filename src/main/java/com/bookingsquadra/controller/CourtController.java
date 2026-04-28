@@ -1,5 +1,6 @@
 package com.bookingsquadra.controller;
 
+import com.bookingsquadra.dto.AvailableSlotDto;
 import com.bookingsquadra.service.CourtService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -23,7 +23,7 @@ public class CourtController {
     }
 
     @GetMapping("/{courtId}/available-slots")
-    public List<String> availableSlots(
+    public AvailableSlotDto availableSlots(
             @PathVariable UUID courtId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {

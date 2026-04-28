@@ -33,12 +33,14 @@ spring:
     default-property-inclusion: non_null
     time-zone: UTC
 
+  web:
+    error:
+      include-message: always
+      include-binding-errors: always
+
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
-  error:
-    include-message: always
-    include-binding-errors: always
 
 springdoc:
   api-docs:

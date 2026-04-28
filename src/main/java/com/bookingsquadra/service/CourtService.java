@@ -1,10 +1,10 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.dto.AvailableSlotDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -17,7 +17,7 @@ public class CourtService {
     }
 
     @Transactional(readOnly = true)
-    public List<String> getAvailableSlots(UUID courtId, LocalDate date) {
+    public AvailableSlotDto getAvailableSlots(UUID courtId, LocalDate date) {
         return courtAvailabilityService.getAvailableSlots(courtId, date);
     }
 }

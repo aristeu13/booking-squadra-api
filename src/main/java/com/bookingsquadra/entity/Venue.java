@@ -47,14 +47,7 @@ public class Venue {
     @Column(nullable = false)
     private String address;
 
-    @Column(nullable = false)
-    private String city;
-
-    @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "state_code", nullable = false, length = 2)
-    private String stateCode;
-
-    @Column(name = "city_id")
+    @Column(name = "city_id", nullable = false)
     private Integer cityId;
 
     private Double latitude;

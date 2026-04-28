@@ -9,8 +9,10 @@ public interface VenueDistanceProjection {
     String getDescription();
     String getImageUrl();
     String getAddress();
+    Integer getCityId();
     String getCity();
     String getStateCode();
+    String getTimezone();
     String[] getSports();
     String getAmenities();
     Integer getPriceCents();

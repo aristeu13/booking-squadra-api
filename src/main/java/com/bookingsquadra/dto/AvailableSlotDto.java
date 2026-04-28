@@ -1,8 +1,11 @@
 package com.bookingsquadra.dto;
 
-import java.time.LocalTime;
+import java.time.LocalDate;
+import java.util.List;
 
 public record AvailableSlotDto(
-        LocalTime start,
-        LocalTime end
+        LocalDate date,
+        String timezone,
+        Short slotDurationMinutes,
+        List<String> slots
 ) {}

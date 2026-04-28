@@ -12,8 +12,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -40,14 +38,14 @@ public class Booking {
     @Column(name = "court_id", nullable = false, columnDefinition = "uuid")
     private UUID courtId;
 
-    @Column(name = "booking_date", nullable = false)
-    private LocalDate bookingDate;
+    @Column(name = "starts_at", nullable = false)
+    private OffsetDateTime startsAt;
 
-    @Column(name = "start_time", nullable = false)
-    private LocalTime startTime;
+    @Column(name = "ends_at", nullable = false)
+    private OffsetDateTime endsAt;
 
-    @Column(name = "end_time", nullable = false)
-    private LocalTime endTime;
+    @Column(name = "venue_timezone", nullable = false)
+    private String venueTimezone;
 
     @Column(nullable = false)
     private String status;

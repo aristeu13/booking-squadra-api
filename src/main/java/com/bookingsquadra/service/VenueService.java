@@ -7,10 +7,12 @@ import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.dto.VenueResponseDto;
 import com.bookingsquadra.entity.CancelPolicy;
+import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
 import com.bookingsquadra.entity.Venue;
 import com.bookingsquadra.repository.CancelPolicyRepository;
+import com.bookingsquadra.repository.CityRepository;
 import com.bookingsquadra.repository.CourtRepository;
 import com.bookingsquadra.repository.OperatingHoursRepository;
 import com.bookingsquadra.repository.VenueDistanceProjection;
@@ -29,17 +31,20 @@ public class VenueService {
 
     private static final double DEFAULT_MAX_DISTANCE_KM = 999.0;
 
+    private final CityRepository cityRepository;
     private final VenueRepository venueRepository;
     private final CourtRepository courtRepository;
     private final OperatingHoursRepository operatingHoursRepository;
     private final CancelPolicyRepository cancelPolicyRepository;
 
     public VenueService(
+            CityRepository cityRepository,
             VenueRepository venueRepository,
             CourtRepository courtRepository,
             OperatingHoursRepository operatingHoursRepository,
             CancelPolicyRepository cancelPolicyRepository
     ) {
+        this.cityRepository = cityRepository;
         this.venueRepository = venueRepository;
         this.courtRepository = courtRepository;
         this.operatingHoursRepository = operatingHoursRepository;
@@ -69,6 +74,9 @@ public class VenueService {
     public VenueDto getById(UUID venueId) {
         Venue venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
+        City city = cityRepository.findById(venue.getCityId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "Venue city not found"));
         List<CourtDto> courts = courtRepository
                 .findByVenueIdAndActiveTrueOrderBySortOrderAsc(venueId)
                 .stream()
@@ -84,7 +92,7 @@ public class VenueService {
                 .findByVenueId(venueId)
                 .map(VenueService::toPolicyDto)
                 .orElse(null);
-        return toVenueDto(venue, courts, hours, policy);
+        return toVenueDto(venue, city, courts, hours, policy);
     }
 
     @Transactional(readOnly = true)
@@ -97,6 +105,7 @@ public class VenueService {
 
     private static VenueDto toVenueDto(
             Venue v,
+            City city,
             List<CourtDto> courts,
             List<OperatingHoursDto> hours,
             CancelPolicyDto policy
@@ -108,8 +117,10 @@ public class VenueService {
                 v.getDescription(),
                 v.getImageUrl(),
                 v.getAddress(),
-                v.getCity(),
-                v.getStateCode(),
+                city.getId(),
+                city.getName(),
+                city.getStateCode(),
+                city.getTimezone(),
                 v.getLatitude(),
                 v.getLongitude(),
                 v.getSports() == null ? Collections.emptyList() : List.of(v.getSports()),
@@ -158,8 +169,10 @@ public class VenueService {
                 p.getDescription(),
                 p.getImageUrl(),
                 p.getAddress(),
+                p.getCityId(),
                 p.getCity(),
                 p.getStateCode(),
+                p.getTimezone(),
                 sports == null ? Collections.emptyList() : List.of(sports),
                 p.getAmenities(),
                 p.getPriceCents(),
