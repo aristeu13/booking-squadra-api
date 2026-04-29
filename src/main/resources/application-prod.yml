@@ -23,6 +23,13 @@ spring:
   web:
     resources:
       add-mappings: false
+    error:
+      include-message: never
+      include-binding-errors: never
+      include-stacktrace: never
+      include-exception: false
+      whitelabel:
+        enabled: false
 
 server:
   shutdown: graceful
@@ -39,13 +46,6 @@ server:
       min-spare: 20
     max-connections: 8192
     connection-timeout: 20000
-  error:
-    include-message: never
-    include-binding-errors: never
-    include-stacktrace: never
-    include-exception: false
-    whitelabel:
-      enabled: false
 
 logging:
   level:

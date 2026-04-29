@@ -12,12 +12,12 @@ spring:
       hibernate:
         format_sql: true
 
-server:
-  error:
-    include-message: always
-    include-binding-errors: always
-    include-stacktrace: on_param
-    include-exception: true
+  web:
+    error:
+      include-message: always
+      include-binding-errors: always
+      include-stacktrace: on_param
+      include-exception: true
 
 logging:
   level:
