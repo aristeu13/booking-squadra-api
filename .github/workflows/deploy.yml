@@ -67,6 +67,8 @@ jobs:
           mkdir -p /app && cd /app
           echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
           echo "$ENV_B64" | base64 -d > .env
+
+          printf '\n' >> .env
           {
             echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
             echo "AWS_REGION=$AWS_REGION"
@@ -94,9 +96,10 @@ jobs:
 
           echo "Command ID: $COMMAND_ID"
 
+          # Don't fail-fast — we want to print stdout/stderr even on Failed status
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID"
+            --instance-id "$INSTANCE_ID" || true
 
           STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
