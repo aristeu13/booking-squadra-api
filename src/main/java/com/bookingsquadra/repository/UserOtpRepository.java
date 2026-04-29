@@ -15,4 +15,11 @@ public interface UserOtpRepository extends JpaRepository<UserOtp, UUID> {
             String otpCode,
             OffsetDateTime now
     );
+
+    boolean existsByUserIdAndPurposeAndUsedAtIsNullAndExpiresAtAfterAndCreatedAtAfter(
+            UUID userId,
+            String purpose,
+            OffsetDateTime expiresAt,
+            OffsetDateTime createdAt
+    );
 }

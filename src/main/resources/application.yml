@@ -57,6 +57,11 @@ springdoc:
   show-actuator: false
 
 app:
+  auth:
+    test-otp:
+      enabled: ${TEST_OTP_ENABLED:true}
+      email: ${TEST_OTP_EMAIL:test@example.com}
+      code: ${TEST_OTP_CODE:123456}
   security:
     jwt:
       secret: ${JWT_SECRET}

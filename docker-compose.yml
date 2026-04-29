@@ -98,6 +98,10 @@ services:
 
       SERVER_PORT: 8080
 
+      TEST_OTP_ENABLED: ${TEST_OTP_ENABLED:-true}
+      TEST_OTP_EMAIL: ${TEST_OTP_EMAIL:-test@example.com}
+      TEST_OTP_CODE: ${TEST_OTP_CODE:-123456}
+
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (>=32 bytes for HS256)}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
 

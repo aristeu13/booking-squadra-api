@@ -5,6 +5,7 @@ import com.bookingsquadra.dto.OtpRequestDto;
 import com.bookingsquadra.dto.OtpVerifyDto;
 import com.bookingsquadra.service.AuthService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,15 +25,15 @@ public class AuthController {
 
     @PostMapping("/otp/request")
     @SecurityRequirements
-    public ResponseEntity<Void> requestOtp(@Valid @RequestBody OtpRequestDto body) {
-        authService.requestOtp(body.email());
+    public ResponseEntity<Void> requestOtp(@Valid @RequestBody OtpRequestDto body, HttpServletRequest request) {
+        authService.requestOtp(body.email(), request);
         return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/otp/verify")
     @SecurityRequirements
-    public ResponseEntity<AuthTokenDto> verifyOtp(@Valid @RequestBody OtpVerifyDto body) {
-        return ResponseEntity.ok(authService.verifyOtp(body.email(), body.code()));
+    public ResponseEntity<AuthTokenDto> verifyOtp(@Valid @RequestBody OtpVerifyDto body, HttpServletRequest request) {
+        return ResponseEntity.ok(authService.verifyOtp(body.email(), body.code(), request));
     }
 
     @PostMapping("/signout")

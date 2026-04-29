@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({MailgunProperties.class, PaymentWebhookProperties.class})
+@EnableConfigurationProperties({MailgunProperties.class, PaymentWebhookProperties.class, TestOtpProperties.class})
 public class MailgunConfig {
 
     @Bean
