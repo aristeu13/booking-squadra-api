@@ -1,11 +1,15 @@
+
 spring:
   application:
     name: booking-squadra-api
 
+  profiles:
+    default: dev
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/booking_squadra}
     username: ${DB_USERNAME:booking_squadra}
-    password: ${DB_PASSWORD:booking_squadra}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: ${DB_POOL_MAX:10}
@@ -18,11 +22,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
         jdbc:
           time_zone: UTC
     open-in-view: false
-    show-sql: false
 
   flyway:
     enabled: true
@@ -37,37 +39,34 @@ spring:
     problemdetails:
       enabled: true
 
-  web:
-    error:
-      include-message: always
-      include-binding-errors: always
-
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  forward-headers-strategy: framework
 
 springdoc:
   api-docs:
     path: /api-docs
-
-logging:
-  level:
-    root: ${LOG_LEVEL_ROOT:INFO}
-    com.bookingsquadra: ${LOG_LEVEL_APP:INFO}
-    org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
-    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:WARN}
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+  scalar:
+    path: /scalar
+    enabled: ${SPRINGDOC_SCALAR_ENABLED:true}
+  show-actuator: false
 
 app:
   security:
     jwt:
-      secret: ${JWT_SECRET:change-me-change-me-change-me-change-me-change-me}
+      secret: ${JWT_SECRET}
       expiration-ms: ${JWT_EXPIRATION_MS:3600000}
   mailgun:
-    api-key: ${MAILGUN_API_KEY:}
-    domain: ${MAILGUN_DOMAIN:}
+    api-key: ${MAILGUN_API_KEY}
+    domain: ${MAILGUN_DOMAIN}
     from: ${MAILGUN_FROM:Squadra <no-reply@booking-squadra.com>}
     base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
     otp-template: ${MAILGUN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}
   payments:
     webhook:
-      token: ${PAYMENTS_WEBHOOK_TOKEN:whsec_cFfxxmIl_W2ehmzMaP4OzfOir-V0Z9tgvtSlZhZX4TQ}
+      token: ${PAYMENTS_WEBHOOK_TOKEN}

@@ -34,17 +34,20 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers("/legal/**").permitAll()
-                        .requestMatchers("/payments-webhook/**").permitAll()
+                        .requestMatchers("/health").permitAll()
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/legal/**").permitAll()
+                        .requestMatchers("/api/v1/payments-webhook/**").permitAll()
                         .requestMatchers(
+                                "/api-docs",
                                 "/api-docs/**",
+                                "/swagger-ui",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
-                                "/scalar/**",
-                                "/scalar"
+                                "/scalar",
+                                "/scalar/**"
                         ).permitAll()
-                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

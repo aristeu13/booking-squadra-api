@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/legal")
+@RequestMapping("/api/v1/legal")
 public class LegalController {
 
     private final LegalService legalService;

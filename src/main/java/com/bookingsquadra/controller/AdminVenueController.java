@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/admin/venues")
+@RequestMapping("/api/v1/admin/venues")
 public class AdminVenueController {
 
     private final AdminVenueService adminVenueService;
@@ -39,7 +39,7 @@ public class AdminVenueController {
     @PostMapping
     public ResponseEntity<VenueDto> createVenue(@Valid @RequestBody CreateVenueDto body) {
         VenueDto created = adminVenueService.createVenue(body);
-        return ResponseEntity.created(URI.create("/admin/venues/" + created.id())).body(created);
+        return ResponseEntity.created(URI.create("/api/v1/admin/venues/" + created.id())).body(created);
     }
 
     @PostMapping("/{venueId}/courts")
@@ -48,7 +48,7 @@ public class AdminVenueController {
             @Valid @RequestBody CreateCourtDto body
     ) {
         CourtDto created = adminVenueService.createCourt(venueId, body);
-        return ResponseEntity.created(URI.create("/courts/" + created.id())).body(created);
+        return ResponseEntity.created(URI.create("/api/v1/courts/" + created.id())).body(created);
     }
 
     @PatchMapping("/{id}")

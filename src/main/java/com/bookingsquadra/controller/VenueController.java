@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/venues")
+@RequestMapping("/api/v1/venues")
 public class VenueController {
 
     private final VenueService venueService;

@@ -1,0 +1,47 @@
+
+spring:
+  datasource:
+    password: ${DB_PASSWORD:booking_squadra}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: ${DB_POOL_MIN:1}
+
+  jpa:
+    show-sql: ${JPA_SHOW_SQL:true}
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: on_param
+    include-exception: true
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.bookingsquadra: ${LOG_LEVEL_APP:DEBUG}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:DEBUG}
+    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:TRACE}
+    org.springframework.web: INFO
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+  scalar:
+    enabled: ${SPRINGDOC_SCALAR_ENABLED:true}
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-only-change-me-dev-only-change-me-dev-only-change-me}
+  mailgun:
+    api-key: ${MAILGUN_API_KEY:}
+    domain: ${MAILGUN_DOMAIN:}
+  payments:
+    webhook:
+      token: ${PAYMENTS_WEBHOOK_TOKEN:dev-webhook-token}

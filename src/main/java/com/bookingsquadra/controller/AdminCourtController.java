@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/admin/courts")
+@RequestMapping("/api/v1/admin/courts")
 public class AdminCourtController {
 
     private final AdminVenueService adminVenueService;

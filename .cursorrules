@@ -124,12 +124,12 @@ cities(id INT PK, name, state_code, latitude, longitude,
 ## Security & Auth
 - Spring Security is **stateless** (`SessionCreationPolicy.STATELESS`); no CSRF, no sessions, no cookies.
 - `JwtAuthenticationFilter` runs before `UsernamePasswordAuthenticationFilter` and populates the `SecurityContext` from the `Authorization: Bearer <token>` header.
-- Permitted without auth: `/auth/**`, `/api-docs/**`, `/swagger-ui/**`, `/scalar/**`. Everything else requires a valid JWT.
+- Permitted without auth: `/health`, `/api/v1/auth/**`, `/api-docs/**`, `/swagger-ui.html`, `/scalar/**`. Everything else requires a valid JWT.
 - JWT signing secret comes from `JWT_SECRET`; expiration from `JWT_EXPIRATION_MS`. Both must be set in production via env.
-- For OpenAPI: declare a `bearerAuth` HTTP/JWT security scheme so Scalar shows the auth panel. OTP endpoints (`/auth/otp/request`, `/auth/otp/verify`) should opt out via `@SecurityRequirements`.
+- For OpenAPI: declare a `bearerAuth` HTTP/JWT security scheme so Scalar shows the auth panel. OTP endpoints (`/api/v1/auth/otp/request`, `/api/v1/auth/otp/verify`) should opt out via `@SecurityRequirements`.
 
 ## API Conventions
-- Base path: no global prefix. Group by resource: `/auth/**`, `/venues`, `/courts`, `/bookings`, etc.
+- Base path: real API controllers use `/api/v1`. Documentation and infrastructure endpoints remain root-level.
 - Use the right status codes: `200` for read, `201` for create (with `Location`), `202` when work is queued (e.g. OTP request), `204` for empty success, `409` for booking conflicts, `422` for validation failures that survive bean validation.
 - Pagination: prefer `Pageable` + `Page<T>` for list endpoints over rolling your own.
 - Money is always returned as integer cents on the wire; the client formats. Don't return floats.

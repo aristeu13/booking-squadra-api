@@ -1,0 +1,44 @@
+# Development overlay.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Differences from the base (production) stack:
+#   - SPRING_PROFILES_ACTIVE=dev (verbose logs, lenient error responses,
+#     baked-in defaults for secrets so the app boots without a curated env).
+#   - Postgres port is published on the host (5432) so you can connect from
+#     your IDE / psql.
+#   - JVM debugger listens on 5005.
+#   - Sensitive defaults are filled in so `docker compose up` "just works"
+#     without an env file. NEVER use these values outside local development.
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-booking_squadra}
+
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+
+      DB_PASSWORD: ${DB_PASSWORD:-booking_squadra}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-dev-only-change-me-dev-only-change-me}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-dev-disabled}
+      PAYMENTS_WEBHOOK_TOKEN: ${PAYMENTS_WEBHOOK_TOKEN:-dev-webhook-token}
+
+      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-INFO}
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-DEBUG}
+      LOG_LEVEL_SQL: ${LOG_LEVEL_SQL:-DEBUG}
+      LOG_LEVEL_SQL_BIND: ${LOG_LEVEL_SQL_BIND:-TRACE}
+
+      # Open the JVM debugger on 5005 (suspend=n so the app boots without
+      # waiting for an attached debugger).
+      JAVA_TOOL_OPTIONS: >-
+        -XX:MaxRAMPercentage=50
+        -Duser.timezone=UTC
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+    ports:
+      - "${APP_PORT:-8080}:8080"
+      - "${APP_DEBUG_PORT:-5005}:5005"

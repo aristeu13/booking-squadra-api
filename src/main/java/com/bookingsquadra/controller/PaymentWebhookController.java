@@ -17,7 +17,7 @@ import java.security.MessageDigest;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/payments-webhook")
+@RequestMapping("/api/v1/payments-webhook")
 public class PaymentWebhookController {
 
     private static final String ASAAS_ACCESS_TOKEN_HEADER = "asaas-access-token";

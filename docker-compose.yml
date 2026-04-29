@@ -1,21 +1,92 @@
+name: booking-squadra
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: booking-squadra-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: booking_squadra
-      POSTGRES_USER: booking_squadra
-      POSTGRES_PASSWORD: booking_squadra
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-booking_squadra}
+      POSTGRES_USER: ${POSTGRES_USER:-booking_squadra}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (export it or pass --env-file)}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U booking_squadra -d booking_squadra"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-booking_squadra} -d ${POSTGRES_DB:-booking_squadra}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  app:
+    image: booking-squadra-api:${APP_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: booking-squadra-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-booking_squadra}
+      DB_USERNAME: ${POSTGRES_USER:-booking_squadra}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      DB_POOL_MIN: ${DB_POOL_MIN:-5}
+      DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-30000}
+
+      SERVER_PORT: 8080
+
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (>=32 bytes for HS256)}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-3600000}
+
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:?MAILGUN_API_KEY must be set}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-mail.squadraplay.com}
+      MAILGUN_FROM: ${MAILGUN_FROM:-Squadra <naoresponder@mail.squadraplay.com>}
+      MAILGUN_BASE_URL: ${MAILGUN_BASE_URL:-https://api.mailgun.net}
+      MAILGUN_OTP_TEMPLATE: ${MAILGUN_OTP_TEMPLATE:-019dcff1-fc35-7b88-a0d7-c87d728bc04e}
+
+      PAYMENTS_WEBHOOK_TOKEN: ${PAYMENTS_WEBHOOK_TOKEN:?PAYMENTS_WEBHOOK_TOKEN must be set}
+
+      SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-false}
+      SPRINGDOC_SWAGGER_UI_ENABLED: ${SPRINGDOC_SWAGGER_UI_ENABLED:-false}
+      SPRINGDOC_SCALAR_ENABLED: ${SPRINGDOC_SCALAR_ENABLED:-false}
+
+      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-WARN}
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-INFO}
+      LOG_LEVEL_SQL: ${LOG_LEVEL_SQL:-WARN}
+      LOG_LEVEL_SQL_BIND: ${LOG_LEVEL_SQL_BIND:-WARN}
+
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Duser.timezone=UTC}
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+networks:
+  backend:
+    driver: bridge
 
 volumes:
   postgres_data:
+    driver: local

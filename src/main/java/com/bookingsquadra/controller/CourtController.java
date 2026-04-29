@@ -13,7 +13,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/courts")
+@RequestMapping("/api/v1/courts")
 public class CourtController {
 
     private final CourtService courtService;
