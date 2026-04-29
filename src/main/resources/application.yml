@@ -33,6 +33,10 @@ spring:
     default-property-inclusion: non_null
     time-zone: UTC
 
+  mvc:
+    problemdetails:
+      enabled: true
+
   web:
     error:
       include-message: always
