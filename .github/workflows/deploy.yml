@@ -1,0 +1,117 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: booking-squadra-api
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deployment-Role
+          role-session-name: gha-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy via SSM
+        env:
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+          DOTENV_PROD: ${{ secrets.DOTENV_PROD }}
+        run: |
+          set -euo pipefail
+
+          COMPOSE_B64=$(base64 -w 0 docker-compose.yml)
+          ENV_B64=$(printf '%s' "$DOTENV_PROD" | base64 -w 0)
+
+          REMOTE_SCRIPT=$(cat <<EOF
+          set -euo pipefail
+          mkdir -p /app && cd /app
+          echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
+          echo "$ENV_B64" | base64 -d > .env
+          {
+            echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
+            echo "AWS_REGION=$AWS_REGION"
+            echo "ECR_REPOSITORY=$ECR_REPOSITORY"
+            echo "APP_VERSION=$IMAGE_TAG"
+          } >> .env
+          chmod 600 .env
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          docker compose --env-file .env pull
+          docker compose --env-file .env up -d --remove-orphans
+          docker image prune -f
+          EOF
+          )
+
+          jq -n --arg cmd "$REMOTE_SCRIPT" '{commands: [$cmd]}' > /tmp/ssm-params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file:///tmp/ssm-params.json \
+            --comment "Deploy ${IMAGE_TAG:0:7}" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Command ID: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "Status" --output text)
+
+          echo "::group::stdout"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query "StandardOutputContent" --output text
+          echo "::endgroup::"
+
+          echo "::group::stderr"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query "StandardErrorContent" --output text
+          echo "::endgroup::"
+
+          [ "$STATUS" = "Success" ] || { echo "Deploy failed: $STATUS"; exit 1; }
