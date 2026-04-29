@@ -1,6 +1,49 @@
 name: booking-squadra
 
 services:
+  nginx:
+    image: nginxproxy/nginx-proxy:alpine
+    container_name: booking-squadra-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      DEFAULT_HOST: ${API_DOMAIN:-api.squadraplay.com}
+    volumes:
+      - nginx_certs:/etc/nginx/certs:ro
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  letsencrypt:
+    image: nginxproxy/acme-companion:latest
+    container_name: booking-squadra-letsencrypt
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    environment:
+      DEFAULT_EMAIL: ${LETSENCRYPT_EMAIL:-admin@squadraplay.com}
+      NGINX_PROXY_CONTAINER: booking-squadra-nginx
+    volumes:
+      - nginx_certs:/etc/nginx/certs
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+      - acme_data:/etc/acme.sh
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
   postgres:
     image: postgres:16-alpine
     container_name: booking-squadra-postgres
@@ -36,10 +79,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${APP_PORT:-8080}:8080"
+    expose:
+      - "8080"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+
+      VIRTUAL_HOST: ${API_DOMAIN:-api.squadraplay.com}
+      VIRTUAL_PORT: 8080
+      LETSENCRYPT_HOST: ${API_DOMAIN:-api.squadraplay.com}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-admin@squadraplay.com}
 
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-booking_squadra}
       DB_USERNAME: ${POSTGRES_USER:-booking_squadra}
@@ -73,6 +121,7 @@ services:
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Duser.timezone=UTC}
     networks:
       - backend
+      - proxy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -85,9 +134,19 @@ services:
           memory: 1g
 
 networks:
+  proxy:
+    driver: bridge
   backend:
     driver: bridge
 
 volumes:
+  nginx_certs:
+    driver: local
+  nginx_vhost:
+    driver: local
+  nginx_html:
+    driver: local
+  acme_data:
+    driver: local
   postgres_data:
     driver: local
