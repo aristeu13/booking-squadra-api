@@ -20,6 +20,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-booking_squadra}
 
   app:
+    image: booking-squadra-api:dev
+    pull_policy: build
     environment:
       SPRING_PROFILES_ACTIVE: dev
 

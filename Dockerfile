@@ -42,4 +42,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
     CMD wget -qO- "http://127.0.0.1:${SERVER_PORT}/health" >/dev/null 2>&1 || exit 1
 
-ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
