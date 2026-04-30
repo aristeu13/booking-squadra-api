@@ -263,6 +263,7 @@ Response `200`:
   "name": "Ana Silva",
   "email": "ana@example.com",
   "phone": "+5534999999999",
+  "cpf": "52998224725",
   "googleAuth": false
 }
 ```
@@ -278,7 +279,8 @@ Request:
 ```json
 {
   "name": "Ana Silva",
-  "phone": "+5534999999999"
+  "phone": "+5534999999999",
+  "cpf": "52998224725"
 }
 ```
 
@@ -288,6 +290,7 @@ Validation:
 
 - `name`: optional, max 255 characters.
 - `phone`: optional, max 32 characters.
+- `cpf`: optional, max 32 characters; when provided, normalized to digits and validated (checksum). Send only digits or a common formatted CPF string.
 - Fields omitted or sent as `null` are not changed.
 
 ### Request Account Deletion OTP
@@ -1036,6 +1039,7 @@ Validation:
   "name": "string",
   "email": "string",
   "phone": "string|null",
+  "cpf": "string|null",
   "googleAuth": false
 }
 ```
@@ -1045,7 +1049,8 @@ Validation:
 ```json
 {
   "name": "string|null",
-  "phone": "string|null"
+  "phone": "string|null",
+  "cpf": "string|null"
 }
 ```
 
