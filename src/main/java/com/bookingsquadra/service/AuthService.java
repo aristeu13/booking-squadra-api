@@ -10,15 +10,19 @@ import com.bookingsquadra.repository.UserOtpRepository;
 import com.bookingsquadra.repository.UserRefreshTokenRepository;
 import com.bookingsquadra.repository.UserRepository;
 import com.bookingsquadra.security.JwtUtil;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -44,6 +48,7 @@ public class AuthService {
     private final OtpEmailSender otpEmailSender;
     private final AuthRateLimitService authRateLimitService;
     private final TestOtpProperties testOtpProperties;
+    private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     public AuthService(
             JwtUtil jwtUtil,
@@ -53,7 +58,8 @@ public class AuthService {
             UserRefreshTokenRepository userRefreshTokenRepository,
             OtpEmailSender otpEmailSender,
             AuthRateLimitService authRateLimitService,
-            TestOtpProperties testOtpProperties
+            TestOtpProperties testOtpProperties,
+            GoogleIdTokenVerifier googleIdTokenVerifier
     ) {
         this.jwtUtil = jwtUtil;
         this.jwtProperties = jwtProperties;
@@ -63,6 +69,7 @@ public class AuthService {
         this.otpEmailSender = otpEmailSender;
         this.authRateLimitService = authRateLimitService;
         this.testOtpProperties = testOtpProperties;
+        this.googleIdTokenVerifier = googleIdTokenVerifier;
     }
 
     @Transactional
@@ -136,6 +143,20 @@ public class AuthService {
     }
 
     @Transactional
+    public AuthTokenDto verifyGoogle(String idToken) {
+        GoogleIdToken.Payload payload = verifyGooglePayload(idToken);
+        String googleId = requireText(payload.getSubject(), "Invalid Google token");
+        String normalizedEmail = normalizeEmail(requireText(payload.getEmail(), "Google email is required"));
+        if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Google email must be verified");
+        }
+
+        String fullName = normalizeNullable(payload.get("name"));
+        User user = resolveGoogleUser(googleId, normalizedEmail, fullName);
+        return issueTokenPair(user, OffsetDateTime.now());
+    }
+
+    @Transactional
     public AuthTokenDto refresh(String refreshToken) {
         OffsetDateTime now = OffsetDateTime.now();
         UserRefreshToken storedToken = userRefreshTokenRepository
@@ -175,6 +196,65 @@ public class AuthService {
                 jwtUtil.generateToken(user.getId().toString(), user.getRole()),
                 refreshToken
         );
+    }
+
+    private GoogleIdToken.Payload verifyGooglePayload(String idToken) {
+        try {
+            GoogleIdToken verifiedToken = googleIdTokenVerifier.verify(idToken);
+            if (verifiedToken == null) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Google token");
+            }
+            return verifiedToken.getPayload();
+        } catch (GeneralSecurityException | IOException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Google token", e);
+        }
+    }
+
+    private User resolveGoogleUser(String googleId, String normalizedEmail, String fullName) {
+        User googleUser = userRepository.findByGoogleId(googleId).orElse(null);
+        User emailUser = userRepository.findFirstByEmailIgnoreCase(normalizedEmail).orElse(null);
+
+        if (googleUser != null) {
+            ensureActive(googleUser);
+            if (emailUser != null && !emailUser.getId().equals(googleUser.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Google account conflicts with another user");
+            }
+            googleUser.setEmail(normalizedEmail);
+            applyGoogleProfile(googleUser, googleId, fullName);
+            return userRepository.save(googleUser);
+        }
+
+        if (emailUser != null) {
+            ensureActive(emailUser);
+            if (hasText(emailUser.getGoogleId()) && !googleId.equals(emailUser.getGoogleId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is linked to another Google account");
+            }
+            applyGoogleProfile(emailUser, googleId, fullName);
+            return userRepository.save(emailUser);
+        }
+
+        return userRepository.save(User.builder()
+                .name(fullName == null ? "" : fullName)
+                .email(normalizedEmail)
+                .googleId(googleId)
+                .hasUsedGoogleAuth(true)
+                .role(User.ROLE_USER)
+                .status(User.STATUS_ACTIVE)
+                .build());
+    }
+
+    private static void applyGoogleProfile(User user, String googleId, String fullName) {
+        user.setGoogleId(googleId);
+        user.setHasUsedGoogleAuth(true);
+        if (!hasText(user.getName()) && fullName != null) {
+            user.setName(fullName);
+        }
+    }
+
+    private static void ensureActive(User user) {
+        if (!User.STATUS_ACTIVE.equals(user.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account is not active");
+        }
     }
 
     private static String generateCode() {
@@ -218,6 +298,27 @@ public class AuthService {
 
     private static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String requireText(String value, String message) {
+        if (!hasText(value)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
+        }
+        return value.trim();
+    }
+
+    private static String normalizeNullable(Object value) {
+        if (!(value instanceof String text)) {
+            return null;
+        }
+        if (!hasText(text)) {
+            return null;
+        }
+        return text.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static InetAddress resolveClientIp(HttpServletRequest request) {

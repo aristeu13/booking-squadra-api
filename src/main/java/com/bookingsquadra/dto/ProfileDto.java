@@ -7,5 +7,6 @@ public record ProfileDto(
         String name,
         String email,
         String phone,
+        String cpf,
         Boolean googleAuth
 ) {}

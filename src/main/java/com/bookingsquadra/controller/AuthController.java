@@ -1,6 +1,7 @@
 package com.bookingsquadra.controller;
 
 import com.bookingsquadra.dto.AuthTokenDto;
+import com.bookingsquadra.dto.GoogleAuthRequestDto;
 import com.bookingsquadra.dto.OtpRequestDto;
 import com.bookingsquadra.dto.OtpVerifyDto;
 import com.bookingsquadra.dto.RefreshTokenDto;
@@ -35,6 +36,12 @@ public class AuthController {
     @SecurityRequirements
     public ResponseEntity<AuthTokenDto> verifyOtp(@Valid @RequestBody OtpVerifyDto body, HttpServletRequest request) {
         return ResponseEntity.ok(authService.verifyOtp(body.email(), body.code(), request));
+    }
+
+    @PostMapping("/google")
+    @SecurityRequirements
+    public ResponseEntity<AuthTokenDto> google(@Valid @RequestBody GoogleAuthRequestDto body) {
+        return ResponseEntity.ok(authService.verifyGoogle(body.idToken()));
     }
 
     @PostMapping("/refresh")

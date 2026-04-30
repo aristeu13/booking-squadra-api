@@ -43,6 +43,11 @@ public class User {
 
     private String phone;
 
+    @Column(name = "google_id", unique = true)
+    private String googleId;
+
+    private String cpf;
+
     @Column(name = "has_used_google_auth", nullable = false)
     private Boolean hasUsedGoogleAuth;
 

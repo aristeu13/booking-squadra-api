@@ -51,6 +51,9 @@ public class UserService {
         if (body.phone() != null) {
             user.setPhone(body.phone());
         }
+        if (body.cpf() != null) {
+            user.setCpf(normalizeCpf(body.cpf()));
+        }
         return toDto(userRepository.save(user));
     }
 
@@ -85,6 +88,8 @@ public class UserService {
         user.setName("Deleted User");
         user.setEmail("deleted-" + user.getId() + "@deleted.invalid");
         user.setPhone(null);
+        user.setGoogleId(null);
+        user.setCpf(null);
         user.setHasUsedGoogleAuth(false);
         user.setStatus(User.STATUS_DELETED);
         userRepository.save(user);
@@ -112,6 +117,37 @@ public class UserService {
     }
 
     private static ProfileDto toDto(User u) {
-        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getHasUsedGoogleAuth());
+        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getCpf(), u.getHasUsedGoogleAuth());
+    }
+
+    private static String normalizeCpf(String cpf) {
+        String digits = cpf.replaceAll("\\D", "");
+        if (digits.isBlank()) {
+            return null;
+        }
+        if (!isValidCpf(digits)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "Invalid CPF");
+        }
+        return digits;
+    }
+
+    private static boolean isValidCpf(String digits) {
+        if (digits.length() != 11 || digits.chars().distinct().count() == 1) {
+            return false;
+        }
+
+        int firstDigit = calculateCpfDigit(digits, 9);
+        int secondDigit = calculateCpfDigit(digits, 10);
+        return firstDigit == Character.digit(digits.charAt(9), 10)
+                && secondDigit == Character.digit(digits.charAt(10), 10);
+    }
+
+    private static int calculateCpfDigit(String digits, int length) {
+        int sum = 0;
+        for (int i = 0; i < length; i++) {
+            sum += Character.digit(digits.charAt(i), 10) * (length + 1 - i);
+        }
+        int remainder = (sum * 10) % 11;
+        return remainder == 10 ? 0 : remainder;
     }
 }
