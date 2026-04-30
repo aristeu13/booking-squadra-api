@@ -1,10 +1,13 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.config.JwtProperties;
 import com.bookingsquadra.config.TestOtpProperties;
 import com.bookingsquadra.dto.AuthTokenDto;
 import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.UserOtp;
+import com.bookingsquadra.entity.UserRefreshToken;
 import com.bookingsquadra.repository.UserOtpRepository;
+import com.bookingsquadra.repository.UserRefreshTokenRepository;
 import com.bookingsquadra.repository.UserRepository;
 import com.bookingsquadra.security.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,8 +18,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Locale;
 
 @Service
@@ -24,26 +33,33 @@ public class AuthService {
 
     private static final int OTP_TTL_MINUTES = 10;
     private static final int OTP_EMAIL_COOLDOWN_SECONDS = 60;
+    private static final int REFRESH_TOKEN_BYTES = 32;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JwtUtil jwtUtil;
+    private final JwtProperties jwtProperties;
     private final UserRepository userRepository;
     private final UserOtpRepository userOtpRepository;
+    private final UserRefreshTokenRepository userRefreshTokenRepository;
     private final OtpEmailSender otpEmailSender;
     private final AuthRateLimitService authRateLimitService;
     private final TestOtpProperties testOtpProperties;
 
     public AuthService(
             JwtUtil jwtUtil,
+            JwtProperties jwtProperties,
             UserRepository userRepository,
             UserOtpRepository userOtpRepository,
+            UserRefreshTokenRepository userRefreshTokenRepository,
             OtpEmailSender otpEmailSender,
             AuthRateLimitService authRateLimitService,
             TestOtpProperties testOtpProperties
     ) {
         this.jwtUtil = jwtUtil;
+        this.jwtProperties = jwtProperties;
         this.userRepository = userRepository;
         this.userOtpRepository = userOtpRepository;
+        this.userRefreshTokenRepository = userRefreshTokenRepository;
         this.otpEmailSender = otpEmailSender;
         this.authRateLimitService = authRateLimitService;
         this.testOtpProperties = testOtpProperties;
@@ -100,7 +116,7 @@ public class AuthService {
 
         if (testOtpProperties.matchesEmail(normalizedEmail)) {
             if (testOtpProperties.matchesCode(code)) {
-                return new AuthTokenDto(jwtUtil.generateToken(user.getId().toString(), user.getRole()));
+                return issueTokenPair(user, now);
             }
             throw invalidOtp(normalizedEmail, clientIp, now, "Invalid or expired OTP");
         }
@@ -116,15 +132,69 @@ public class AuthService {
         otp.setUsedAt(now);
         userOtpRepository.save(otp);
 
-        return new AuthTokenDto(jwtUtil.generateToken(user.getId().toString(), user.getRole()));
+        return issueTokenPair(user, now);
     }
 
-    public void signOut() {
-        // Stateless JWT: sign-out is a client-side concern (drop the token).
+    @Transactional
+    public AuthTokenDto refresh(String refreshToken) {
+        OffsetDateTime now = OffsetDateTime.now();
+        UserRefreshToken storedToken = userRefreshTokenRepository
+                .findByTokenHashAndRevokedAtIsNullAndExpiresAtAfter(hashToken(refreshToken), now)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
+
+        User user = userRepository.findById(storedToken.getUserId())
+                .filter(candidate -> User.STATUS_ACTIVE.equals(candidate.getStatus()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
+
+        storedToken.setRevokedAt(now);
+        userRefreshTokenRepository.save(storedToken);
+
+        return issueTokenPair(user, now);
+    }
+
+    @Transactional
+    public void signOut(String refreshToken) {
+        OffsetDateTime now = OffsetDateTime.now();
+        userRefreshTokenRepository
+                .findByTokenHashAndRevokedAtIsNullAndExpiresAtAfter(hashToken(refreshToken), now)
+                .ifPresent(storedToken -> {
+                    storedToken.setRevokedAt(now);
+                    userRefreshTokenRepository.save(storedToken);
+                });
+    }
+
+    private AuthTokenDto issueTokenPair(User user, OffsetDateTime now) {
+        String refreshToken = generateRefreshToken();
+        userRefreshTokenRepository.save(UserRefreshToken.builder()
+                .userId(user.getId())
+                .tokenHash(hashToken(refreshToken))
+                .expiresAt(now.plus(Duration.ofMillis(jwtProperties.refreshExpirationMs())))
+                .build());
+
+        return new AuthTokenDto(
+                jwtUtil.generateToken(user.getId().toString(), user.getRole()),
+                refreshToken
+        );
     }
 
     private static String generateCode() {
         return String.format("%06d", RANDOM.nextInt(1_000_000));
+    }
+
+    private static String generateRefreshToken() {
+        byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String hashToken(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     private boolean hasRecentLoginOtp(java.util.UUID userId, OffsetDateTime now) {

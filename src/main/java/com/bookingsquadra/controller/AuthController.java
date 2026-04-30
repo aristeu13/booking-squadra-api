@@ -3,6 +3,7 @@ package com.bookingsquadra.controller;
 import com.bookingsquadra.dto.AuthTokenDto;
 import com.bookingsquadra.dto.OtpRequestDto;
 import com.bookingsquadra.dto.OtpVerifyDto;
+import com.bookingsquadra.dto.RefreshTokenDto;
 import com.bookingsquadra.service.AuthService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,9 +37,16 @@ public class AuthController {
         return ResponseEntity.ok(authService.verifyOtp(body.email(), body.code(), request));
     }
 
+    @PostMapping("/refresh")
+    @SecurityRequirements
+    public ResponseEntity<AuthTokenDto> refresh(@Valid @RequestBody RefreshTokenDto body) {
+        return ResponseEntity.ok(authService.refresh(body.refreshToken()));
+    }
+
     @PostMapping("/signout")
-    public ResponseEntity<Void> signOut() {
-        authService.signOut();
+    @SecurityRequirements
+    public ResponseEntity<Void> signOut(@Valid @RequestBody RefreshTokenDto body) {
+        authService.signOut(body.refreshToken());
         return ResponseEntity.noContent().build();
     }
 }

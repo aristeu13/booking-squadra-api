@@ -1,11 +1,11 @@
 package com.bookingsquadra.security;
 
+import com.bookingsquadra.config.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -18,12 +18,9 @@ public class JwtUtil {
     private final SecretKey key;
     private final long expirationMs;
 
-    public JwtUtil(
-            @Value("${app.security.jwt.secret}") String secret,
-            @Value("${app.security.jwt.expiration-ms}") long expirationMs
-    ) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.expirationMs = expirationMs;
+    public JwtUtil(JwtProperties properties) {
+        this.key = Keys.hmacShaKeyFor(properties.secret().getBytes(StandardCharsets.UTF_8));
+        this.expirationMs = properties.expirationMs();
     }
 
     public String generateToken(String subject, String role) {
