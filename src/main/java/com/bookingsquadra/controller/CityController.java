@@ -20,7 +20,10 @@ public class CityController {
     }
 
     @GetMapping
-    public List<CityDto> search(@RequestParam(required = false) String q) {
-        return cityService.search(q);
+    public List<CityDto> search(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Integer limit
+    ) {
+        return cityService.search(q, limit);
     }
 }

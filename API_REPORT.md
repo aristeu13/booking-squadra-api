@@ -330,13 +330,14 @@ Behavior notes:
 
 ### Search Cities
 
-`GET /api/v1/cities?q=<text>`
+`GET /api/v1/cities?q=<text>&limit=<int>`
 
 Auth: user JWT required.
 
 Query:
 
-- `q`: optional string. If blank or missing, returns an empty array.
+- `q`: optional string. If blank, missing, or shorter than 2 chars, returns an empty array.
+- `limit`: optional int. Defaults to 20. Clamped to [1, 50].
 
 Response `200`:
 
@@ -355,6 +356,7 @@ Response `200`:
 Behavior notes:
 
 - Max results: 50.
+- Case- and accent-insensitive **prefix** match on the city name (after removing accents): `sao` matches `São ...`, but `Paulo` will not match `São Paulo` because there is no leading wildcard.
 - Use this for city autocomplete.
 
 ### List Venues

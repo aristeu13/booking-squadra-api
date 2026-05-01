@@ -12,7 +12,7 @@ public interface CityRepository extends JpaRepository<City, Integer> {
     @Query(value = """
             SELECT *
             FROM public.cities
-            WHERE name ILIKE CONCAT('%', :q, '%')
+            WHERE LOWER(public.f_unaccent(name)) LIKE LOWER(public.f_unaccent(CONCAT(:q, '%')))
             ORDER BY name ASC
             LIMIT :limit
             """, nativeQuery = true)
