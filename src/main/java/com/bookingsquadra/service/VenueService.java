@@ -71,6 +71,7 @@ public class VenueService {
             Double distanceKm,
             List<Sport> sportsFilters,
             List<Amenity> amenitiesFilters,
+            String nameQuery,
             int page,
             int pageSize
     ) {
@@ -83,6 +84,9 @@ public class VenueService {
                 ? ""
                 : String.join(",", amenitiesFilters.stream()
                         .filter(a -> a != null).map(Amenity::code).toList());
+        String nameQueryParam = (nameQuery == null || nameQuery.isBlank())
+                ? ""
+                : nameQuery.trim();
 
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
@@ -90,7 +94,7 @@ public class VenueService {
         );
 
         return venueRepository
-                .findVenuesWithDistance(lat, lon, maxDistanceKm, sportsParam, amenitiesParam, pageable)
+                .findVenuesWithDistance(lat, lon, maxDistanceKm, sportsParam, amenitiesParam, nameQueryParam, pageable)
                 .map(VenueService::toDto);
     }
 

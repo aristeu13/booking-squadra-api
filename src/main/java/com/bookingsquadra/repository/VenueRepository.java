@@ -50,6 +50,10 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                       CAST(:amenities AS text) = ''
                       OR jsonb_exists_all(v.amenities, string_to_array(CAST(:amenities AS text), ','))
                   )
+                  AND (
+                      CAST(:nameQuery AS text) = ''
+                      OR LOWER(v.name) LIKE '%' || LOWER(CAST(:nameQuery AS text)) || '%'
+                  )
             )
             SELECT
                 vd.id            AS id,
@@ -81,7 +85,11 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
               )
               AND (
                   CAST(:amenities AS text) = ''
-                  OR v.amenities ?& string_to_array(CAST(:amenities AS text), ',')
+                  OR jsonb_exists_all(v.amenities, string_to_array(CAST(:amenities AS text), ','))
+              )
+              AND (
+                  CAST(:nameQuery AS text) = ''
+                  OR LOWER(v.name) LIKE '%' || LOWER(CAST(:nameQuery AS text)) || '%'
               )
               AND (
                   CAST(:lat AS double precision) IS NULL
@@ -104,6 +112,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
             @Param("maxDistanceKm") double maxDistanceKm,
             @Param("sports") String sports,
             @Param("amenities") String amenities,
+            @Param("nameQuery") String nameQuery,
             Pageable pageable
     );
 

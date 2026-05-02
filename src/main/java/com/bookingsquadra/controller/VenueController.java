@@ -34,10 +34,11 @@ public class VenueController {
             @RequestParam(name = "distance_km", required = false) Double distanceKm,
             @RequestParam(name = "sports_filters", required = false) List<Sport> sportsFilters,
             @RequestParam(name = "amenities_filters", required = false) List<Amenity> amenitiesFilters,
+            @RequestParam(name = "q", required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(name = "page_size", defaultValue = "20") int pageSize
     ) {
-        return venueService.search(lat, lon, distanceKm, sportsFilters, amenitiesFilters, page, pageSize);
+        return venueService.search(lat, lon, distanceKm, sportsFilters, amenitiesFilters, q, page, pageSize);
     }
 
     @GetMapping("/{id}")
