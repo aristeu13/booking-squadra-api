@@ -1,7 +1,9 @@
 package com.bookingsquadra.dto;
 
+import com.bookingsquadra.entity.Amenity;
+import com.bookingsquadra.entity.Sport;
+
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public record VenueDto(
@@ -17,8 +19,8 @@ public record VenueDto(
         String timezone,
         Double latitude,
         Double longitude,
-        List<String> sports,
-        Map<String, Object> amenities,
+        List<Sport> sports,
+        List<Amenity> amenities,
         Integer priceCents,
         Short slotDurationMinutes,
         Boolean active,

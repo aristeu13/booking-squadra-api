@@ -1,5 +1,8 @@
 package com.bookingsquadra.dto;
 
+import com.bookingsquadra.entity.Amenity;
+import com.bookingsquadra.entity.Sport;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -14,8 +17,8 @@ public record VenueResponseDto(
         String city,
         String stateCode,
         String timezone,
-        List<String> sports,
-        String amenities,
+        List<Sport> sports,
+        List<Amenity> amenities,
         Integer priceCents,
         Double distanceKm
 ) {}

@@ -6,10 +6,12 @@ import com.bookingsquadra.dto.CourtDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.dto.VenueResponseDto;
+import com.bookingsquadra.entity.Amenity;
 import com.bookingsquadra.entity.CancelPolicy;
 import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
+import com.bookingsquadra.entity.Sport;
 import com.bookingsquadra.entity.Venue;
 import com.bookingsquadra.repository.CancelPolicyRepository;
 import com.bookingsquadra.repository.CityRepository;
@@ -17,19 +19,30 @@ import com.bookingsquadra.repository.CourtRepository;
 import com.bookingsquadra.repository.OperatingHoursRepository;
 import com.bookingsquadra.repository.VenueDistanceProjection;
 import com.bookingsquadra.repository.VenueRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class VenueService {
 
     private static final double DEFAULT_MAX_DISTANCE_KM = 999.0;
+    private static final int MAX_PAGE_SIZE = 100;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final CityRepository cityRepository;
     private final VenueRepository venueRepository;
@@ -52,22 +65,31 @@ public class VenueService {
     }
 
     @Transactional(readOnly = true)
-    public List<VenueResponseDto> search(
+    public Page<VenueResponseDto> search(
             Double lat,
             Double lon,
             Double distanceKm,
-            List<String> sportsFilters
+            List<Sport> sportsFilters,
+            List<Amenity> amenitiesFilters,
+            int page,
+            int pageSize
     ) {
         double maxDistanceKm = distanceKm == null ? DEFAULT_MAX_DISTANCE_KM : distanceKm;
         String sportsParam = (sportsFilters == null || sportsFilters.isEmpty())
                 ? ""
-                : String.join(",", sportsFilters);
+                : String.join(",", sportsFilters.stream().map(Sport::code).toList());
+        String amenitiesParam = (amenitiesFilters == null || amenitiesFilters.isEmpty())
+                ? ""
+                : String.join(",", amenitiesFilters.stream().map(Amenity::code).toList());
+
+        PageRequest pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE)
+        );
 
         return venueRepository
-                .findVenuesWithDistance(lat, lon, maxDistanceKm, sportsParam)
-                .stream()
-                .map(VenueService::toDto)
-                .toList();
+                .findVenuesWithDistance(lat, lon, maxDistanceKm, sportsParam, amenitiesParam, pageable)
+                .map(VenueService::toDto);
     }
 
     @Transactional(readOnly = true)
@@ -134,8 +156,8 @@ public class VenueService {
                 city.getTimezone(),
                 v.getLatitude(),
                 v.getLongitude(),
-                v.getSports() == null ? Collections.emptyList() : List.of(v.getSports()),
-                v.getAmenities(),
+                sportsFromArray(v.getSports()),
+                amenitiesFromMap(v.getAmenities()),
                 v.getPriceCents(),
                 v.getSlotDurationMinutes(),
                 v.getActive(),
@@ -172,7 +194,6 @@ public class VenueService {
     }
 
     private static VenueResponseDto toDto(VenueDistanceProjection p) {
-        String[] sports = p.getSports();
         return new VenueResponseDto(
                 p.getId(),
                 p.getSlug(),
@@ -184,10 +205,77 @@ public class VenueService {
                 p.getCity(),
                 p.getStateCode(),
                 p.getTimezone(),
-                sports == null ? Collections.emptyList() : List.of(sports),
-                p.getAmenities(),
+                sportsFromArray(p.getSports()),
+                amenitiesFromJson(p.getAmenities()),
                 p.getPriceCents(),
                 p.getDistanceKm()
         );
+    }
+
+    private static List<Sport> sportsFromArray(String[] codes) {
+        if (codes == null || codes.length == 0) return Collections.emptyList();
+        List<Sport> out = new ArrayList<>(codes.length);
+        for (String code : codes) {
+            Sport s = Sport.fromCodeOrNull(code);
+            if (s != null) out.add(s);
+        }
+        return out;
+    }
+
+    private static List<Amenity> amenitiesFromMap(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) return Collections.emptyList();
+        List<Amenity> out = new ArrayList<>(map.size());
+        for (Map.Entry<String, Object> e : map.entrySet()) {
+            if (!isTruthy(e.getValue())) continue;
+            Amenity a = Amenity.fromCodeOrNull(e.getKey());
+            if (a != null && !out.contains(a)) out.add(a);
+        }
+        return out;
+    }
+
+    // The list query returns amenities as `jsonb::text`. Parse it here so the
+    // FE always sees a typed `List<Amenity>` instead of a raw JSON string.
+    private static List<Amenity> amenitiesFromJson(String json) {
+        if (json == null || json.isBlank()) return Collections.emptyList();
+        JsonNode node;
+        try {
+            node = JSON.readTree(json);
+        } catch (JsonProcessingException e) {
+            return Collections.emptyList();
+        }
+        List<Amenity> out = new ArrayList<>();
+        if (node.isObject()) {
+            Iterator<String> names = node.fieldNames();
+            while (names.hasNext()) {
+                String key = names.next();
+                if (!isTruthy(node.get(key))) continue;
+                Amenity a = Amenity.fromCodeOrNull(key);
+                if (a != null && !out.contains(a)) out.add(a);
+            }
+        } else if (node.isArray()) {
+            for (JsonNode item : node) {
+                if (!item.isTextual()) continue;
+                Amenity a = Amenity.fromCodeOrNull(item.asText());
+                if (a != null && !out.contains(a)) out.add(a);
+            }
+        }
+        return out;
+    }
+
+    private static boolean isTruthy(Object value) {
+        if (value == null) return false;
+        if (value instanceof Boolean b) return b;
+        if (value instanceof String s) return !s.isBlank() && !"false".equalsIgnoreCase(s);
+        return true;
+    }
+
+    private static boolean isTruthy(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) return false;
+        if (node.isBoolean()) return node.asBoolean();
+        if (node.isTextual()) {
+            String s = node.asText();
+            return !s.isBlank() && !"false".equalsIgnoreCase(s);
+        }
+        return true;
     }
 }

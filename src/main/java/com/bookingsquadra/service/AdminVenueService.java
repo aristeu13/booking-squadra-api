@@ -10,10 +10,12 @@ import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.UpdateCourtDto;
 import com.bookingsquadra.dto.UpdateVenueDto;
 import com.bookingsquadra.dto.VenueDto;
+import com.bookingsquadra.entity.Amenity;
 import com.bookingsquadra.entity.CancelPolicy;
 import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
+import com.bookingsquadra.entity.Sport;
 import com.bookingsquadra.entity.Venue;
 import com.bookingsquadra.repository.CancelPolicyRepository;
 import com.bookingsquadra.repository.CityRepository;
@@ -29,6 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -81,8 +84,8 @@ public class AdminVenueService {
                 .cityId(dto.cityId())
                 .latitude(dto.latitude())
                 .longitude(dto.longitude())
-                .sports(dto.sports() == null ? new String[0] : dto.sports().toArray(new String[0]))
-                .amenities(dto.amenities() == null ? Map.of() : dto.amenities())
+                .sports(sportsToArray(dto.sports()))
+                .amenities(amenitiesToMap(dto.amenities()))
                 .priceCents(dto.priceCents() == null ? DEFAULT_PRICE_CENTS : dto.priceCents())
                 .slotDurationMinutes(dto.slotDurationMinutes() == null
                         ? DEFAULT_SLOT_DURATION_MINUTES
@@ -143,8 +146,8 @@ public class AdminVenueService {
         }
         if (dto.latitude() != null) venue.setLatitude(dto.latitude());
         if (dto.longitude() != null) venue.setLongitude(dto.longitude());
-        if (dto.sports() != null) venue.setSports(dto.sports().toArray(new String[0]));
-        if (dto.amenities() != null) venue.setAmenities(dto.amenities());
+        if (dto.sports() != null) venue.setSports(sportsToArray(dto.sports()));
+        if (dto.amenities() != null) venue.setAmenities(amenitiesToMap(dto.amenities()));
         if (dto.priceCents() != null) venue.setPriceCents(dto.priceCents());
         if (dto.slotDurationMinutes() != null) venue.setSlotDurationMinutes(dto.slotDurationMinutes());
         if (dto.active() != null) venue.setActive(dto.active());
@@ -324,8 +327,8 @@ public class AdminVenueService {
                 city.getTimezone(),
                 v.getLatitude(),
                 v.getLongitude(),
-                v.getSports() == null ? Collections.emptyList() : List.of(v.getSports()),
-                v.getAmenities(),
+                sportsFromArray(v.getSports()),
+                amenitiesFromMap(v.getAmenities()),
                 v.getPriceCents(),
                 v.getSlotDurationMinutes(),
                 v.getActive(),
@@ -359,5 +362,47 @@ public class AdminVenueService {
                 p.getLocalCancelHours(),
                 p.getNoShowPixThreshold()
         );
+    }
+
+    private static String[] sportsToArray(List<Sport> sports) {
+        if (sports == null || sports.isEmpty()) return new String[0];
+        return sports.stream().map(Sport::code).toArray(String[]::new);
+    }
+
+    private static List<Sport> sportsFromArray(String[] codes) {
+        if (codes == null || codes.length == 0) return Collections.emptyList();
+        List<Sport> out = new ArrayList<>(codes.length);
+        for (String code : codes) {
+            Sport s = Sport.fromCodeOrNull(code);
+            if (s != null) out.add(s);
+        }
+        return out;
+    }
+
+    // Stored as JSONB object {"parking": true, "locker_room": true} so existing
+    // rows keep working; truthy keys become amenities, unknown keys are dropped.
+    private static Map<String, Object> amenitiesToMap(List<Amenity> amenities) {
+        if (amenities == null || amenities.isEmpty()) return Map.of();
+        Map<String, Object> map = new LinkedHashMap<>(amenities.size());
+        for (Amenity a : amenities) map.put(a.code(), true);
+        return map;
+    }
+
+    private static List<Amenity> amenitiesFromMap(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) return Collections.emptyList();
+        List<Amenity> out = new ArrayList<>(map.size());
+        for (Map.Entry<String, Object> e : map.entrySet()) {
+            if (!isTruthy(e.getValue())) continue;
+            Amenity a = Amenity.fromCodeOrNull(e.getKey());
+            if (a != null && !out.contains(a)) out.add(a);
+        }
+        return out;
+    }
+
+    private static boolean isTruthy(Object value) {
+        if (value == null) return false;
+        if (value instanceof Boolean b) return b;
+        if (value instanceof String s) return !s.isBlank() && !"false".equalsIgnoreCase(s);
+        return true;
     }
 }

@@ -1,5 +1,7 @@
 package com.bookingsquadra.dto;
 
+import com.bookingsquadra.entity.Amenity;
+import com.bookingsquadra.entity.Sport;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Positive;
@@ -7,7 +9,6 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
-import java.util.Map;
 
 public record UpdateVenueDto(
         String name,
@@ -18,8 +19,8 @@ public record UpdateVenueDto(
         Integer cityId,
         @DecimalMin("-90") @DecimalMax("90") Double latitude,
         @DecimalMin("-180") @DecimalMax("180") Double longitude,
-        List<String> sports,
-        Map<String, Object> amenities,
+        List<Sport> sports,
+        List<Amenity> amenities,
         @PositiveOrZero Integer priceCents,
         @Positive Short slotDurationMinutes,
         Boolean active
