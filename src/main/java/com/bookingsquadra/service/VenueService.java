@@ -77,10 +77,12 @@ public class VenueService {
         double maxDistanceKm = distanceKm == null ? DEFAULT_MAX_DISTANCE_KM : distanceKm;
         String sportsParam = (sportsFilters == null || sportsFilters.isEmpty())
                 ? ""
-                : String.join(",", sportsFilters.stream().map(Sport::code).toList());
+                : String.join(",", sportsFilters.stream()
+                        .filter(s -> s != null).map(Sport::code).toList());
         String amenitiesParam = (amenitiesFilters == null || amenitiesFilters.isEmpty())
                 ? ""
-                : String.join(",", amenitiesFilters.stream().map(Amenity::code).toList());
+                : String.join(",", amenitiesFilters.stream()
+                        .filter(a -> a != null).map(Amenity::code).toList());
 
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
