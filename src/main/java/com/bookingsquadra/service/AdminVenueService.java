@@ -334,7 +334,8 @@ public class AdminVenueService {
                 v.getActive(),
                 courts.stream().map(AdminVenueService::toDto).toList(),
                 hours.stream().map(AdminVenueService::toDto).toList(),
-                toDto(policy)
+                toDto(policy),
+                null
         );
     }
 
