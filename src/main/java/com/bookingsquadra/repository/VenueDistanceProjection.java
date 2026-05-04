@@ -17,4 +17,5 @@ public interface VenueDistanceProjection {
     String getAmenities();
     Integer getPriceCents();
     Double getDistanceKm();
+    Integer getNumberOfCourts();
 }

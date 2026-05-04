@@ -20,5 +20,6 @@ public record VenueResponseDto(
         List<Sport> sports,
         List<Amenity> amenities,
         Integer priceCents,
-        Double distanceKm
+        Double distanceKm,
+        Integer numberOfCourts
 ) {}

@@ -27,6 +27,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                     v.sports,
                     v.amenities,
                     v.price_cents,
+                    (SELECT COUNT(*) FROM public.courts co WHERE co.venue_id = v.id AND co.active = true) AS court_count,
                     CASE
                         WHEN CAST(:lat AS double precision) IS NULL
                           OR CAST(:lon AS double precision) IS NULL
@@ -68,8 +69,9 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
                 vd.timezone      AS timezone,
                 vd.sports        AS sports,
                 vd.amenities::text AS amenities,
-                vd.price_cents   AS "priceCents",
-                vd.distance_km   AS "distanceKm"
+                vd.price_cents    AS "priceCents",
+                vd.distance_km    AS "distanceKm",
+                vd.court_count    AS "numberOfCourts"
             FROM venue_distances vd
             WHERE vd.distance_km IS NULL
                OR vd.distance_km <= CAST(:maxDistanceKm AS double precision)

@@ -214,7 +214,8 @@ public class VenueService {
                 sportsFromArray(p.getSports()),
                 amenitiesFromJson(p.getAmenities()),
                 p.getPriceCents(),
-                p.getDistanceKm()
+                p.getDistanceKm(),
+                p.getNumberOfCourts()
         );
     }
 
