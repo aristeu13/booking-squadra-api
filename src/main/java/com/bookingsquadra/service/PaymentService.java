@@ -238,7 +238,7 @@ public class PaymentService {
 
         BigDecimal refundValue = fromCents(netCents);
         AsaasRefundRequest refundRequest = new AsaasRefundRequest(
-                refundValue,
+                null,
                 buildRefundDescription(refundPercent),
                 List.of(new AsaasSplitRefund(payment.getAsaasSplitId(), refundValue))
         );
