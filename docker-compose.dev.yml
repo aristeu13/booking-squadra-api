@@ -30,6 +30,9 @@ services:
       MAILGUN_API_KEY: ${MAILGUN_API_KEY:-dev-disabled}
       PAYMENTS_WEBHOOK_TOKEN: ${PAYMENTS_WEBHOOK_TOKEN:-dev-webhook-token}
 
+      ASAAS_BASE_URL: ${ASAAS_BASE_URL:-https://api-sandbox.asaas.com/v3}
+      ASAAS_ACCESS_TOKEN: ${ASAAS_ACCESS_TOKEN:-dev-disabled}
+
       LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-INFO}
       LOG_LEVEL_APP: ${LOG_LEVEL_APP:-DEBUG}
       LOG_LEVEL_SQL: ${LOG_LEVEL_SQL:-DEBUG}
