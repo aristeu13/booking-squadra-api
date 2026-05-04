@@ -42,8 +42,12 @@ public class VenueController {
     }
 
     @GetMapping("/{id}")
-    public VenueDto getById(@PathVariable UUID id) {
-        return venueService.getById(id);
+    public VenueDto getById(
+            @PathVariable UUID id,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lon
+    ) {
+        return venueService.getById(id, lat, lon);
     }
 
     @GetMapping("/{id}/bookings/count")

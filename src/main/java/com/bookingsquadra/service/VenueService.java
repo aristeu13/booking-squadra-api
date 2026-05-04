@@ -99,7 +99,7 @@ public class VenueService {
     }
 
     @Transactional(readOnly = true)
-    public VenueDto getById(UUID venueId) {
+    public VenueDto getById(UUID venueId, Double lat, Double lon) {
         Venue venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
         City city = cityRepository.findById(venue.getCityId())
@@ -120,7 +120,8 @@ public class VenueService {
                 .findByVenueId(venueId)
                 .map(VenueService::toPolicyDto)
                 .orElse(null);
-        return toVenueDto(venue, city, courts, hours, policy);
+        Double distanceKm = haversineKm(lat, lon, venue.getLatitude(), venue.getLongitude());
+        return toVenueDto(venue, city, courts, hours, policy, distanceKm);
     }
 
     @Transactional(readOnly = true)
@@ -147,7 +148,8 @@ public class VenueService {
             City city,
             List<CourtDto> courts,
             List<OperatingHoursDto> hours,
-            CancelPolicyDto policy
+            CancelPolicyDto policy,
+            Double distanceKm
     ) {
         return new VenueDto(
                 v.getId(),
@@ -169,8 +171,19 @@ public class VenueService {
                 v.getActive(),
                 courts,
                 hours,
-                policy
+                policy,
+                distanceKm
         );
+    }
+
+    private static Double haversineKm(Double lat1, Double lon1, Double lat2, Double lon2) {
+        if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private static CourtDto toCourtDto(Court c) {

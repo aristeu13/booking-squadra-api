@@ -26,5 +26,6 @@ public record VenueDto(
         Boolean active,
         List<CourtDto> courts,
         List<OperatingHoursDto> operatingHours,
-        CancelPolicyDto cancelPolicy
+        CancelPolicyDto cancelPolicy,
+        Double distanceKm
 ) {}
