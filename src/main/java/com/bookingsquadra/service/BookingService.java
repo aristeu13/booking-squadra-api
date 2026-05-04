@@ -5,6 +5,7 @@ import com.bookingsquadra.dto.BookingDto;
 import com.bookingsquadra.dto.CancelBookingDto;
 import com.bookingsquadra.dto.CancelBookingRequestDto;
 import com.bookingsquadra.dto.CreateBookingDto;
+import com.bookingsquadra.dto.RefundResponseDto;
 import com.bookingsquadra.entity.Booking;
 import com.bookingsquadra.entity.CancelPolicy;
 import com.bookingsquadra.entity.City;
@@ -35,6 +36,7 @@ public class BookingService {
 
     private static final String BOOKING_TYPE_RESERVATION = "reservation";
     private static final String STATUS_PENDING = "pending";
+    private static final String STATUS_CONFIRMED = "confirmed";
     private static final String STATUS_CANCELLED = "cancelled";
     private static final String PAYMENT_METHOD_PIX = "pix";
 
@@ -45,6 +47,7 @@ public class BookingService {
     private final VenueRepository venueRepository;
     private final UserService userService;
     private final CourtAvailabilityService courtAvailabilityService;
+    private final PaymentService paymentService;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -53,8 +56,8 @@ public class BookingService {
             CourtRepository courtRepository,
             VenueRepository venueRepository,
             UserService userService,
-            CourtAvailabilityService courtAvailabilityService
-    ) {
+            CourtAvailabilityService courtAvailabilityService,
+            PaymentService paymentService) {
         this.bookingRepository = bookingRepository;
         this.cancelPolicyRepository = cancelPolicyRepository;
         this.cityRepository = cityRepository;
@@ -62,6 +65,7 @@ public class BookingService {
         this.venueRepository = venueRepository;
         this.userService = userService;
         this.courtAvailabilityService = courtAvailabilityService;
+        this.paymentService = paymentService;
     }
 
     @Transactional
@@ -135,8 +139,7 @@ public class BookingService {
                     0,
                     0,
                     "already_cancelled",
-                    "Reserva ja estava cancelada."
-            );
+                    "Reserva ja estava cancelada.");
         }
         if (!booking.getStartsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
             return new CancelBookingDto(
@@ -145,8 +148,7 @@ public class BookingService {
                     0,
                     0,
                     "not_cancellable",
-                    "Reserva nao pode ser cancelada apos o horario de inicio."
-            );
+                    "Reserva nao pode ser cancelada apos o horario de inicio.");
         }
 
         Court court = courtOrThrow(booking.getCourtId());
@@ -156,10 +158,29 @@ public class BookingService {
                         HttpStatus.INTERNAL_SERVER_ERROR, "Cancel policy not found"));
         CancelOutcome outcome = calculateCancelOutcome(booking, policy);
 
+        String previousStatus = booking.getStatus();
         booking.setStatus(STATUS_CANCELLED);
         booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
         booking.setCancelReason(request == null ? null : request.reason());
         bookingRepository.save(booking);
+
+        if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
+            if (STATUS_CONFIRMED.equals(previousStatus)) {
+                RefundResponseDto refund = paymentService.refundForCancellation(
+                        booking, outcome.refundPercent());
+                if (refund != null) {
+                    return new CancelBookingDto(
+                            booking.getId(),
+                            true,
+                            outcome.refundPercent(),
+                            refund.netRefundCents(),
+                            outcome.paymentImpact(),
+                            outcome.message());
+                }
+            } else if (STATUS_PENDING.equals(previousStatus)) {
+                paymentService.cancelPendingPayment(booking);
+            }
+        }
 
         return new CancelBookingDto(
                 booking.getId(),
@@ -167,8 +188,7 @@ public class BookingService {
                 outcome.refundPercent(),
                 outcome.refundAmountCents(),
                 outcome.paymentImpact(),
-                outcome.message()
-        );
+                outcome.message());
     }
 
     private static boolean causedByConstraint(Throwable t, String constraintName) {
@@ -209,19 +229,17 @@ public class BookingService {
                 court.getId(),
                 court.getName(),
                 court.getSurfaceType(),
-                booking.getNote()
-        );
+                booking.getNote());
     }
 
     private CancelOutcome calculateCancelOutcome(Booking booking, CancelPolicy policy) {
         long hoursUntilStart = Duration.between(
                 OffsetDateTime.now(ZoneOffset.UTC),
-                booking.getStartsAt()
-        ).toHours();
+                booking.getStartsAt()).toHours();
         if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
             if (hoursUntilStart >= policy.getPixFullRefundHours()) {
                 return refundOutcome(booking, 100, "pix_full_refund",
-                        "Reserva cancelada. Reembolso integral de 100%.");
+                        "Reserva cancelada. Reembolso de 90% aplicado.");
             }
             if (hoursUntilStart >= policy.getPixPartialRefundHours()) {
                 int refundPercent = policy.getPixPartialRefundPercent();
@@ -236,15 +254,14 @@ public class BookingService {
                     "Reserva cancelada dentro do prazo permitido.");
         }
         return refundOutcome(booking, 0, "local_late_cancel",
-                "Reserva cancelada fora do prazo da politica do local.");
+                "Reserva cancelada fora do prazo da politica do local. Você não poderá agendar outro horário neste local sem pagamento antecipado.");
     }
 
     private static CancelOutcome refundOutcome(
             Booking booking,
             int refundPercent,
             String paymentImpact,
-            String message
-    ) {
+            String message) {
         int refundAmountCents = Math.floorDiv(booking.getAmountCents() * refundPercent, 100);
         return new CancelOutcome(refundPercent, refundAmountCents, paymentImpact, message);
     }
@@ -263,8 +280,8 @@ public class BookingService {
             int refundPercent,
             int refundAmountCents,
             String paymentImpact,
-            String message
-    ) {}
+            String message) {
+    }
 
     private static BookingDto toDto(Booking b) {
         ZoneId venueZone = ZoneId.of(b.getVenueTimezone());
@@ -280,7 +297,6 @@ public class BookingService {
                 b.getEndsAt().atZoneSameInstant(venueZone).toLocalTime(),
                 b.getStatus(),
                 b.getBookingType(),
-                b.getNote()
-        );
+                b.getNote());
     }
 }

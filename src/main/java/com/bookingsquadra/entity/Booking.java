@@ -56,9 +56,6 @@ public class Booking {
     @Column(name = "amount_cents", nullable = false)
     private Integer amountCents;
 
-    @Column(name = "transaction_id")
-    private String transactionId;
-
     private String note;
 
     @Column(name = "cancelled_at")

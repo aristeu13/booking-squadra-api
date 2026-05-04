@@ -57,6 +57,9 @@ public class User {
     @Column(nullable = false)
     private String status;
 
+    @Column(name = "asaas_customer_id", unique = true)
+    private String asaasCustomerId;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 

@@ -8,6 +8,7 @@ import com.bookingsquadra.dto.CreateOperatingHoursDto;
 import com.bookingsquadra.dto.CreateVenueDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.UpdateVenueDto;
+import com.bookingsquadra.dto.UpdateVenueWalletDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.service.AdminVenueService;
 import jakarta.validation.Valid;
@@ -96,5 +97,13 @@ public class AdminVenueController {
             @Valid @RequestBody CreateCancelPolicyDto body
     ) {
         return adminVenueService.updateCancelPolicy(venueId, body);
+    }
+
+    @PutMapping("/{venueId}/wallet")
+    public VenueDto updateWallet(
+            @PathVariable UUID venueId,
+            @Valid @RequestBody UpdateVenueWalletDto body
+    ) {
+        return adminVenueService.updateWallet(venueId, body);
     }
 }

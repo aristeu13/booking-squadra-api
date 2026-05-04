@@ -71,6 +71,9 @@ public class Venue {
     @Column(nullable = false)
     private Boolean active;
 
+    @Column(name = "asaas_wallet_id")
+    private String asaasWalletId;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
