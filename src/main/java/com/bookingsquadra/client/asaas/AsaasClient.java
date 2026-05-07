@@ -27,9 +27,10 @@ public class AsaasClient {
                 .body(AsaasCustomerResponse.class));
     }
 
-    public AsaasPaymentResponse createPayment(AsaasPaymentRequest request) {
+    public AsaasPaymentResponse createPayment(AsaasPaymentRequest request, String idempotencyKey) {
         return execute("POST /payments", () -> restClient.post()
                 .uri("/payments")
+                .header("X-Idempotency-Key", idempotencyKey)
                 .body(request)
                 .retrieve()
                 .body(AsaasPaymentResponse.class));

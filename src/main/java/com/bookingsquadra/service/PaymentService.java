@@ -137,7 +137,14 @@ public class PaymentService {
                 ))
         );
 
-        AsaasPaymentResponse response = asaasClient.createPayment(paymentRequest);
+        String idempotencyKey = buildCheckoutIdempotencyKey(booking.getId(), Payment.BILLING_TYPE_PIX);
+        AsaasPaymentResponse response = asaasClient.createPayment(paymentRequest, idempotencyKey);
+
+        Payment concurrent = paymentRepository.findByAsaasPaymentId(response.id()).orElse(null);
+        if (concurrent != null) {
+            return toCheckoutResponse(booking, concurrent);
+        }
+
         AsaasSplitResponse split = firstSplitOrThrow(response);
 
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
@@ -425,6 +432,10 @@ public class PaymentService {
                 payment.getInvoiceUrl(),
                 payment.getExpiresAt()
         );
+    }
+
+    private static String buildCheckoutIdempotencyKey(UUID bookingId, String billingType) {
+        return "checkout_" + bookingId + "_" + billingType + "_v1";
     }
 
     private static String buildRefundDescription(int refundPercent) {
