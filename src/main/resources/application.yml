@@ -81,6 +81,7 @@ app:
     asaas:
       base-url: ${ASAAS_BASE_URL:https://api-sandbox.asaas.com/v3}
       access-token: ${ASAAS_ACCESS_TOKEN}
+      booking-grace-minutes: ${ASAAS_BOOKING_GRACE_MINUTES:3}
       payment-window-minutes: ${ASAAS_PAYMENT_WINDOW_MINUTES:10}
       due-days: ${ASAAS_DUE_DAYS:1}
       full-refund-fee-percent: ${ASAAS_FULL_REFUND_FEE_PERCENT:10}

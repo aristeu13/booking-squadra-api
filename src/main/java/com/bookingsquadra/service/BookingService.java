@@ -1,5 +1,6 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.config.AsaasProperties;
 import com.bookingsquadra.dto.AppointmentDto;
 import com.bookingsquadra.dto.BookingDto;
 import com.bookingsquadra.dto.CancelBookingDto;
@@ -48,6 +49,7 @@ public class BookingService {
     private final UserService userService;
     private final CourtAvailabilityService courtAvailabilityService;
     private final PaymentService paymentService;
+    private final AsaasProperties asaasProperties;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -57,7 +59,8 @@ public class BookingService {
             VenueRepository venueRepository,
             UserService userService,
             CourtAvailabilityService courtAvailabilityService,
-            PaymentService paymentService) {
+            PaymentService paymentService,
+            AsaasProperties asaasProperties) {
         this.bookingRepository = bookingRepository;
         this.cancelPolicyRepository = cancelPolicyRepository;
         this.cityRepository = cityRepository;
@@ -66,6 +69,7 @@ public class BookingService {
         this.userService = userService;
         this.courtAvailabilityService = courtAvailabilityService;
         this.paymentService = paymentService;
+        this.asaasProperties = asaasProperties;
     }
 
     @Transactional
@@ -78,6 +82,9 @@ public class BookingService {
         Venue venue = validated.venue();
         int amountCents = Math.multiplyExact(venue.getPriceCents(), validated.slotCount());
 
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .plusMinutes(asaasProperties.bookingGraceMinutesOrDefault());
+
         Booking booking = Booking.builder()
                 .bookingType(BOOKING_TYPE_RESERVATION)
                 .userId(user.getId())
@@ -88,6 +95,7 @@ public class BookingService {
                 .status(STATUS_PENDING)
                 .amountCents(amountCents)
                 .note(body.note())
+                .expiresAt(expiresAt)
                 .build();
 
         Booking saved;
@@ -229,7 +237,8 @@ public class BookingService {
                 court.getId(),
                 court.getName(),
                 court.getSurfaceType(),
-                booking.getNote());
+                booking.getNote(),
+                booking.getExpiresAt());
     }
 
     private CancelOutcome calculateCancelOutcome(Booking booking, CancelPolicy policy) {
@@ -297,6 +306,7 @@ public class BookingService {
                 b.getEndsAt().atZoneSameInstant(venueZone).toLocalTime(),
                 b.getStatus(),
                 b.getBookingType(),
-                b.getNote());
+                b.getNote(),
+                b.getExpiresAt());
     }
 }

@@ -26,5 +26,6 @@ public record AppointmentDto(
         UUID courtId,
         String courtName,
         String courtSurfaceType,
-        String note
+        String note,
+        OffsetDateTime expiresAt
 ) {}

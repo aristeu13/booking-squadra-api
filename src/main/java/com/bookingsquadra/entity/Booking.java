@@ -58,6 +58,9 @@ public class Booking {
 
     private String note;
 
+    @Column(name = "expires_at")
+    private OffsetDateTime expiresAt;
+
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
 

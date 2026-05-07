@@ -17,5 +17,6 @@ public record BookingDto(
         LocalTime endTime,
         String status,
         String bookingType,
-        String note
+        String note,
+        OffsetDateTime expiresAt
 ) {}

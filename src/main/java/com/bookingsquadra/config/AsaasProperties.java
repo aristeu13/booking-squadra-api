@@ -6,10 +6,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AsaasProperties(
         String baseUrl,
         String accessToken,
+        Integer bookingGraceMinutes,
         Integer paymentWindowMinutes,
         Integer dueDays,
         Integer fullRefundFeePercent
 ) {
+    public int bookingGraceMinutesOrDefault() {
+        return bookingGraceMinutes == null ? 3 : bookingGraceMinutes;
+    }
+
     public int paymentWindowMinutesOrDefault() {
         return paymentWindowMinutes == null ? 10 : paymentWindowMinutes;
     }

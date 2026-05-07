@@ -149,6 +149,7 @@ public class PaymentService {
 
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
                 .plusMinutes(asaasProperties.paymentWindowMinutesOrDefault());
+        booking.setExpiresAt(expiresAt);
 
         Payment payment = Payment.builder()
                 .bookingId(booking.getId())
@@ -309,36 +310,27 @@ public class PaymentService {
         paymentRepository.save(payment);
     }
 
-    /**
-     * Sweeps payments whose 10-minute window has elapsed without confirmation,
-     * deleting them on Asaas and cancelling their bookings.
-     *
-     * TODO: wire this method to a scheduler (Spring @Scheduled or external cron)
-     *       when we adopt the auto-expire policy.
-     */
     @Transactional
-    public int cancelExpiredPayments() {
+    public int cancelExpiredBookings() {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        List<Payment> expired = paymentRepository
-                .findByStatusAndExpiresAtBefore(Payment.STATUS_PENDING, now);
-        for (Payment payment : expired) {
-            try {
-                asaasClient.deletePayment(payment.getAsaasPaymentId());
-            } catch (ResponseStatusException e) {
-                log.warn("Auto-expire: Asaas delete failed for {}: {}",
-                        payment.getAsaasPaymentId(), e.getMessage());
-            }
-            payment.setStatus(Payment.STATUS_DELETED);
-            paymentRepository.save(payment);
-
-            bookingRepository.findById(payment.getBookingId()).ifPresent(booking -> {
-                if (!BOOKING_STATUS_CANCELLED.equals(booking.getStatus())) {
-                    booking.setStatus(BOOKING_STATUS_CANCELLED);
-                    booking.setCancelledAt(now);
-                    booking.setCancelReason("payment_window_expired");
-                    bookingRepository.save(booking);
+        List<Booking> expired = bookingRepository
+                .findByStatusAndExpiresAtBefore(BOOKING_STATUS_PENDING, now);
+        for (Booking booking : expired) {
+            Payment payment = paymentRepository.findByBookingId(booking.getId()).orElse(null);
+            if (payment != null && Payment.STATUS_PENDING.equals(payment.getStatus())) {
+                try {
+                    asaasClient.deletePayment(payment.getAsaasPaymentId());
+                } catch (ResponseStatusException e) {
+                    log.warn("Auto-expire: Asaas delete failed for {}: {}",
+                            payment.getAsaasPaymentId(), e.getMessage());
                 }
-            });
+                payment.setStatus(Payment.STATUS_DELETED);
+                paymentRepository.save(payment);
+            }
+            booking.setStatus(BOOKING_STATUS_CANCELLED);
+            booking.setCancelledAt(now);
+            booking.setCancelReason("payment_window_expired");
+            bookingRepository.save(booking);
         }
         return expired.size();
     }
