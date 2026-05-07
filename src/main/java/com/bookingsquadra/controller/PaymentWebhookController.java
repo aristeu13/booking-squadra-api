@@ -40,11 +40,12 @@ public class PaymentWebhookController {
     ) {
         validateToken(headers);
 
+        String eventId = body.get("id") instanceof String value ? value : null;
         String event = body.get("event") instanceof String value ? value : null;
         Object paymentValue = body.get("payment");
         Map<?, ?> payment = paymentValue instanceof Map<?, ?> value ? value : null;
 
-        paymentWebhookService.handle(event, payment);
+        paymentWebhookService.handle(eventId, event, payment);
 
         return ResponseEntity.ok(Map.of("received", true));
     }

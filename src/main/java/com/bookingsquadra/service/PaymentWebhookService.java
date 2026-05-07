@@ -1,8 +1,10 @@
 package com.bookingsquadra.service;
 
 import com.bookingsquadra.entity.Payment;
+import com.bookingsquadra.entity.ProcessedWebhookEvent;
 import com.bookingsquadra.repository.BookingRepository;
 import com.bookingsquadra.repository.PaymentRepository;
+import com.bookingsquadra.repository.ProcessedWebhookEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,19 +29,26 @@ public class PaymentWebhookService {
 
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
+    private final ProcessedWebhookEventRepository processedWebhookEventRepository;
 
     public PaymentWebhookService(
             BookingRepository bookingRepository,
-            PaymentRepository paymentRepository
+            PaymentRepository paymentRepository,
+            ProcessedWebhookEventRepository processedWebhookEventRepository
     ) {
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
+        this.processedWebhookEventRepository = processedWebhookEventRepository;
     }
 
     @Transactional
-    public void handle(String event, Map<?, ?> payload) {
+    public void handle(String eventId, String event, Map<?, ?> payload) {
         if (event == null || payload == null) {
             log.warn("Ignoring payment webhook with missing event or payment");
+            return;
+        }
+        if (eventId != null && processedWebhookEventRepository.existsById(eventId)) {
+            log.info("Skipping already-processed webhook event {}", eventId);
             return;
         }
 
@@ -62,6 +71,7 @@ public class PaymentWebhookService {
         };
 
         if (outcome.skip) {
+            markProcessed(eventId);
             return;
         }
 
@@ -88,6 +98,7 @@ public class PaymentWebhookService {
         }
 
         if (outcome.bookingStatus == null) {
+            markProcessed(eventId);
             return;
         }
         bookingRepository.findById(payment.getBookingId()).ifPresent(booking -> {
@@ -111,6 +122,17 @@ public class PaymentWebhookService {
                 bookingRepository.save(booking);
             }
         });
+        markProcessed(eventId);
+    }
+
+    private void markProcessed(String eventId) {
+        if (eventId == null) {
+            return;
+        }
+        processedWebhookEventRepository.save(ProcessedWebhookEvent.builder()
+                .eventId(eventId)
+                .processedAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .build());
     }
 
     private Optional<Payment> findPayment(Map<?, ?> payload) {
