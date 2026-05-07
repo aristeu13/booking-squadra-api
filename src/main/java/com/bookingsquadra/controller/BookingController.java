@@ -9,6 +9,7 @@ import com.bookingsquadra.service.BookingService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +49,13 @@ public class BookingController {
     @GetMapping("/{id}")
     public AppointmentDto getById(@PathVariable UUID id) {
         return bookingService.getCurrentUserBooking(id);
+    }
+
+    @GetMapping("/me/pending")
+    public ResponseEntity<AppointmentDto> currentPending() {
+        return bookingService.getCurrentUserPendingBooking()
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/{id}/cancel")

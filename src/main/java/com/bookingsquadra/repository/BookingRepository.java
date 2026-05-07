@@ -34,5 +34,11 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
 
+    Optional<Booking> findFirstByUserIdAndStatusAndStartsAtAfterOrderByCreatedAtDesc(
+            UUID userId,
+            String status,
+            OffsetDateTime now
+    );
+
     List<Booking> findByStatusAndExpiresAtBefore(String status, OffsetDateTime cutoff);
 }

@@ -13,6 +13,7 @@ import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.Venue;
+import com.bookingsquadra.exception.ConflictException;
 import com.bookingsquadra.repository.BookingRepository;
 import com.bookingsquadra.repository.CancelPolicyRepository;
 import com.bookingsquadra.repository.CityRepository;
@@ -30,6 +31,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -75,6 +77,14 @@ public class BookingService {
     @Transactional
     public BookingDto create(CreateBookingDto body) {
         User user = userService.findCurrentOrThrow();
+
+        bookingRepository
+                .findFirstByUserIdAndStatusAndStartsAtAfterOrderByCreatedAtDesc(
+                        user.getId(), STATUS_PENDING, OffsetDateTime.now(ZoneOffset.UTC))
+                .ifPresent(existing -> {
+                    throw new ConflictException("pending_booking_exists",
+                            "You already have a pending booking. Please pay it or cancel it before creating a new one.");
+                });
 
         CourtAvailabilityService.ValidatedSlot validated = courtAvailabilityService.validateBookingSlot(
                 body.courtId(), body.bookingDate(), body.startTime(), body.endTime());
@@ -133,6 +143,16 @@ public class BookingService {
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not found"));
         return toAppointmentDto(booking);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<AppointmentDto> getCurrentUserPendingBooking() {
+        User user = userService.findCurrentOrThrow();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return bookingRepository
+                .findFirstByUserIdAndStatusAndStartsAtAfterOrderByCreatedAtDesc(
+                        user.getId(), STATUS_PENDING, now)
+                .map(this::toAppointmentDto);
     }
 
     @Transactional
