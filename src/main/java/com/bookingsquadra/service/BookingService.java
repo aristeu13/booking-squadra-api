@@ -121,15 +121,14 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AppointmentDto> getCurrentUserAppointments(String status, int page, int pageSize) {
+    public Page<AppointmentDto> getCurrentUserAppointments(
+            String status, OffsetDateTime asOf, int page, int pageSize) {
         User user = userService.findCurrentOrThrow();
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(pageSize, 1), 100));
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime reference = asOf != null ? asOf : OffsetDateTime.now(ZoneOffset.UTC);
         Page<Booking> bookings = switch (status == null ? "upcoming" : status) {
-            case "upcoming" -> bookingRepository
-                    .findByUserIdAndEndsAtAfterOrderByStartsAtAsc(user.getId(), now, pageable);
-            case "past" -> bookingRepository
-                    .findByUserIdAndEndsAtBeforeOrderByStartsAtDesc(user.getId(), now, pageable);
+            case "upcoming" -> bookingRepository.findUpcomingForUser(user.getId(), reference, pageable);
+            case "past" -> bookingRepository.findPastForUser(user.getId(), reference, pageable);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "status must be upcoming or past");
         };

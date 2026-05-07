@@ -8,6 +8,7 @@ import com.bookingsquadra.dto.CreateBookingDto;
 import com.bookingsquadra.service.BookingService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @RestController
@@ -41,10 +43,12 @@ public class BookingController {
     @GetMapping("/me")
     public Page<AppointmentDto> myBookings(
             @RequestParam(defaultValue = "upcoming") String status,
+            @RequestParam(name = "as_of", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(name = "page_size", defaultValue = "20") int pageSize
     ) {
-        return bookingService.getCurrentUserAppointments(status, page, pageSize);
+        return bookingService.getCurrentUserAppointments(status, asOf, page, pageSize);
     }
 
     @GetMapping("/{id}")
