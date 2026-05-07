@@ -22,6 +22,7 @@ import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.Payment;
 import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.Venue;
+import com.bookingsquadra.exception.ConflictException;
 import com.bookingsquadra.repository.BookingRepository;
 import com.bookingsquadra.repository.CancelPolicyRepository;
 import com.bookingsquadra.repository.CourtRepository;
@@ -303,7 +304,7 @@ public class PaymentService {
         } catch (AsaasPaymentNotDeletableException e) {
             log.info("Cannot cancel booking {}: Asaas charge {} was already paid",
                     booking.getId(), payment.getAsaasPaymentId());
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
+            throw new ConflictException("payment_already_received",
                     "Payment was already received; the booking will be confirmed shortly. " +
                             "Please cancel the confirmed booking to request a refund.");
         }
