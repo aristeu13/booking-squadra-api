@@ -39,7 +39,6 @@ public class BookingService {
 
     private static final String BOOKING_TYPE_RESERVATION = "reservation";
     private static final String STATUS_PENDING = "pending";
-    private static final String STATUS_CONFIRMED = "confirmed";
     private static final String STATUS_CANCELLED = "cancelled";
     private static final String PAYMENT_METHOD_PIX = "pix";
 
@@ -156,6 +155,29 @@ public class BookingService {
     }
 
     @Transactional
+    public void deleteCurrentUserPendingBooking(UUID bookingId) {
+        User user = userService.findCurrentOrThrow();
+        Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not found"));
+        if (STATUS_CANCELLED.equals(booking.getStatus())) {
+            return;
+        }
+        if (!STATUS_PENDING.equals(booking.getStatus())) {
+            throw new ConflictException("not_pending",
+                    "Only pending bookings can be deleted. Cancel confirmed bookings instead.");
+        }
+
+        if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
+            paymentService.cancelPendingPayment(booking);
+        }
+
+        booking.setStatus(STATUS_CANCELLED);
+        booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
+        booking.setCancelReason("user_deleted_pending");
+        bookingRepository.save(booking);
+    }
+
+    @Transactional
     public CancelBookingDto cancelCurrentUserBooking(UUID bookingId, CancelBookingRequestDto request) {
         User user = userService.findCurrentOrThrow();
         Booking booking = bookingRepository.findByIdAndUserId(bookingId, user.getId())
@@ -168,6 +190,10 @@ public class BookingService {
                     0,
                     "already_cancelled",
                     "Reserva ja estava cancelada.");
+        }
+        if (STATUS_PENDING.equals(booking.getStatus())) {
+            throw new ConflictException("pending_booking",
+                    "Pending bookings cannot be cancelled. Delete it instead.");
         }
         if (!booking.getStartsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
             return new CancelBookingDto(
@@ -186,27 +212,22 @@ public class BookingService {
                         HttpStatus.INTERNAL_SERVER_ERROR, "Cancel policy not found"));
         CancelOutcome outcome = calculateCancelOutcome(booking, policy);
 
-        String previousStatus = booking.getStatus();
         booking.setStatus(STATUS_CANCELLED);
         booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
         booking.setCancelReason(request == null ? null : request.reason());
         bookingRepository.save(booking);
 
         if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
-            if (STATUS_CONFIRMED.equals(previousStatus)) {
-                RefundResponseDto refund = paymentService.refundForCancellation(
-                        booking, outcome.refundPercent());
-                if (refund != null) {
-                    return new CancelBookingDto(
-                            booking.getId(),
-                            true,
-                            outcome.refundPercent(),
-                            refund.netRefundCents(),
-                            outcome.paymentImpact(),
-                            outcome.message());
-                }
-            } else if (STATUS_PENDING.equals(previousStatus)) {
-                paymentService.cancelPendingPayment(booking);
+            RefundResponseDto refund = paymentService.refundForCancellation(
+                    booking, outcome.refundPercent());
+            if (refund != null) {
+                return new CancelBookingDto(
+                        booking.getId(),
+                        true,
+                        outcome.refundPercent(),
+                        refund.netRefundCents(),
+                        outcome.paymentImpact(),
+                        outcome.message());
             }
         }
 
