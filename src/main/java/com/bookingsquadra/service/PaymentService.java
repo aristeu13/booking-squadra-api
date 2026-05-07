@@ -1,6 +1,7 @@
 package com.bookingsquadra.service;
 
 import com.bookingsquadra.client.asaas.AsaasClient;
+import com.bookingsquadra.client.asaas.AsaasPaymentNotDeletableException;
 import com.bookingsquadra.client.asaas.AsaasCustomerRequest;
 import com.bookingsquadra.client.asaas.AsaasCustomerResponse;
 import com.bookingsquadra.client.asaas.AsaasPaymentRequest;
@@ -290,10 +291,7 @@ public class PaymentService {
         return outcome;
     }
 
-    /**
-     * Cancels an Asaas payment that is still pending (not yet paid).
-     * Used when the user cancels a booking before paying.
-     */
+    
     @Transactional
     public void cancelPendingPayment(Booking booking) {
         Payment payment = paymentRepository.findByBookingId(booking.getId()).orElse(null);
@@ -302,9 +300,12 @@ public class PaymentService {
         }
         try {
             asaasClient.deletePayment(payment.getAsaasPaymentId());
-        } catch (ResponseStatusException e) {
-            log.warn("Failed to delete pending Asaas payment {}: {}",
-                    payment.getAsaasPaymentId(), e.getMessage());
+        } catch (AsaasPaymentNotDeletableException e) {
+            log.info("Cannot cancel booking {}: Asaas charge {} was already paid",
+                    booking.getId(), payment.getAsaasPaymentId());
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Payment was already received; the booking will be confirmed shortly. " +
+                            "Please cancel the confirmed booking to request a refund.");
         }
         payment.setStatus(Payment.STATUS_DELETED);
         paymentRepository.save(payment);
@@ -315,14 +316,12 @@ public class PaymentService {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         List<Booking> expired = bookingRepository
                 .findByStatusAndExpiresAtBefore(BOOKING_STATUS_PENDING, now);
+        int cancelled = 0;
         for (Booking booking : expired) {
             Payment payment = paymentRepository.findByBookingId(booking.getId()).orElse(null);
             if (payment != null && Payment.STATUS_PENDING.equals(payment.getStatus())) {
-                try {
-                    asaasClient.deletePayment(payment.getAsaasPaymentId());
-                } catch (ResponseStatusException e) {
-                    log.warn("Auto-expire: Asaas delete failed for {}: {}",
-                            payment.getAsaasPaymentId(), e.getMessage());
+                if (!tryDeleteAsaasPayment(payment, booking.getId())) {
+                    continue;
                 }
                 payment.setStatus(Payment.STATUS_DELETED);
                 paymentRepository.save(payment);
@@ -331,8 +330,24 @@ public class PaymentService {
             booking.setCancelledAt(now);
             booking.setCancelReason("payment_window_expired");
             bookingRepository.save(booking);
+            cancelled++;
         }
-        return expired.size();
+        return cancelled;
+    }
+
+    private boolean tryDeleteAsaasPayment(Payment payment, UUID bookingId) {
+        try {
+            asaasClient.deletePayment(payment.getAsaasPaymentId());
+            return true;
+        } catch (AsaasPaymentNotDeletableException e) {
+            log.warn("Auto-expire: Asaas payment {} (booking {}) is no longer pending; webhook will reconcile",
+                    payment.getAsaasPaymentId(), bookingId);
+            return false;
+        } catch (ResponseStatusException e) {
+            log.warn("Auto-expire: Asaas delete failed for {} (booking {}): {}",
+                    payment.getAsaasPaymentId(), bookingId, e.getMessage());
+            return false;
+        }
     }
 
     private int computeRefundPercent(Booking booking) {

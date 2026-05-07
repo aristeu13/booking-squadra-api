@@ -37,10 +37,35 @@ public class AsaasClient {
     }
 
     public void deletePayment(String paymentId) {
-        execute("DELETE /payments/" + paymentId, () -> restClient.delete()
-                .uri("/payments/{id}", paymentId)
-                .retrieve()
-                .toBodilessEntity());
+        String operation = "DELETE /payments/" + paymentId;
+        try {
+            restClient.delete()
+                    .uri("/payments/{id}", paymentId)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException e) {
+            String body = e.getResponseBodyAsString();
+            HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+            if (status == HttpStatus.BAD_REQUEST && isNotDeletableBody(body)) {
+                log.info("Asaas DELETE /payments/{} rejected: charge is no longer pending", paymentId);
+                throw new AsaasPaymentNotDeletableException(
+                        "Asaas refused to delete payment " + paymentId + ": " + truncate(body));
+            }
+            logResponseFailure(operation, status, body);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Asaas rejected request: " + truncate(body), e);
+        } catch (RuntimeException e) {
+            log.warn("Asaas {} threw {}", operation, e.toString());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Asaas request failed", e);
+        }
+    }
+
+    private static boolean isNotDeletableBody(String body) {
+        if (body == null) {
+            return false;
+        }
+        return body.contains("invalid_action") && body.contains("não pode ser removida");
     }
 
     public AsaasPixCodeResponse getPixQrCode(String paymentId) {
@@ -64,7 +89,7 @@ public class AsaasClient {
         } catch (RestClientResponseException e) {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
             String body = e.getResponseBodyAsString();
-            log.warn("Asaas {} failed: status={} body={}", operation, status, body);
+            logResponseFailure(operation, status, body);
             if (status != null && status.is4xxClientError()) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                         "Asaas rejected request: " + truncate(body), e);
@@ -76,6 +101,22 @@ public class AsaasClient {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Asaas request failed", e);
         }
+    }
+
+    /**
+     * Logs Asaas response failures so observability tooling can route alerts.
+     * <ul>
+     *   <li>Unexpected 4xx (excluding 429) → {@code ASAAS_UNEXPECTED_4XX} at ERROR — bug or config issue.</li>
+     *   <li>429 / 5xx / unknown → WARN — transient; alert on aggregate rate, not per request.</li>
+     * </ul>
+     */
+    private static void logResponseFailure(String operation, HttpStatus status, String body) {
+        if (status != null && status.is4xxClientError() && status != HttpStatus.TOO_MANY_REQUESTS) {
+            log.error("ASAAS_UNEXPECTED_4XX op=\"{}\" status={} body={}",
+                    operation, status.value(), truncate(body));
+            return;
+        }
+        log.warn("Asaas {} failed: status={} body={}", operation, status, truncate(body));
     }
 
     private static String truncate(String s) {
