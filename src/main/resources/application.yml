@@ -75,6 +75,11 @@ app:
     from: ${MAILGUN_FROM:Squadra <no-reply@booking-squadra.com>}
     base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
     otp-template: ${MAILGUN_OTP_TEMPLATE:019dcff1-fc35-7b88-a0d7-c87d728bc04e}
+    template-payment-confirmed: ${MAILGUN_TEMPLATE_PAYMENT_CONFIRMED:019e04f3-4588-7c7b-b21e-8d640f57c2af}
+    template-payment-refund-in-progress: ${MAILGUN_TEMPLATE_PAYMENT_REFUND_IN_PROGRESS:019e04f4-de15-7017-997d-d1c40942e58a}
+    template-payment-refunded: ${MAILGUN_TEMPLATE_PAYMENT_REFUNDED:019e04f7-3bab-7bdb-a393-ae430cd2855f}
+    template-payment-refund-denied: ${MAILGUN_TEMPLATE_PAYMENT_REFUND_DENIED:019e04f8-b89d-714e-b552-2c300042e7d2}
+    template-prereservation-cancelled: ${MAILGUN_TEMPLATE_PRERESERVATION_CANCELLED:019e04fe-598a-7ec1-aa4b-7beceeca5a1f}
   payments:
     webhook:
       token: ${PAYMENTS_WEBHOOK_TOKEN}

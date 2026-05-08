@@ -51,6 +51,9 @@ public class BookingService {
     private final CourtAvailabilityService courtAvailabilityService;
     private final PaymentService paymentService;
     private final AsaasProperties asaasProperties;
+    private final BookingNotificationDataLoader bookingNotificationDataLoader;
+    private final BookingEmailPayloadMapper bookingEmailPayloadMapper;
+    private final TransactionalEmailService transactionalEmailService;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -61,7 +64,10 @@ public class BookingService {
             UserService userService,
             CourtAvailabilityService courtAvailabilityService,
             PaymentService paymentService,
-            AsaasProperties asaasProperties) {
+            AsaasProperties asaasProperties,
+            BookingNotificationDataLoader bookingNotificationDataLoader,
+            BookingEmailPayloadMapper bookingEmailPayloadMapper,
+            TransactionalEmailService transactionalEmailService) {
         this.bookingRepository = bookingRepository;
         this.cancelPolicyRepository = cancelPolicyRepository;
         this.cityRepository = cityRepository;
@@ -71,6 +77,9 @@ public class BookingService {
         this.courtAvailabilityService = courtAvailabilityService;
         this.paymentService = paymentService;
         this.asaasProperties = asaasProperties;
+        this.bookingNotificationDataLoader = bookingNotificationDataLoader;
+        this.bookingEmailPayloadMapper = bookingEmailPayloadMapper;
+        this.transactionalEmailService = transactionalEmailService;
     }
 
     @Transactional
@@ -174,6 +183,10 @@ public class BookingService {
         booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
         booking.setCancelReason("user_deleted_pending");
         bookingRepository.save(booking);
+        if (PAYMENT_METHOD_PIX.equalsIgnoreCase(booking.getPaymentMethod())) {
+            bookingNotificationDataLoader.load(booking).ifPresent(d -> transactionalEmailService.scheduleAfterCommit(
+                    bookingEmailPayloadMapper.prereservationCancelled(d)));
+        }
     }
 
     @Transactional

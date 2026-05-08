@@ -8,5 +8,10 @@ public record MailgunProperties(
         String domain,
         String from,
         String baseUrl,
-        String otpTemplate
+        String otpTemplate,
+        String templatePaymentConfirmed,
+        String templatePaymentRefundInProgress,
+        String templatePaymentRefunded,
+        String templatePaymentRefundDenied,
+        String templatePrereservationCancelled
 ) {}

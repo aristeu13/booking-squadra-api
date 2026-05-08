@@ -71,6 +71,9 @@ public class PaymentService {
     private final UserRepository userRepository;
     private final UserService userService;
     private final VenueRepository venueRepository;
+    private final BookingNotificationDataLoader bookingNotificationDataLoader;
+    private final BookingEmailPayloadMapper bookingEmailPayloadMapper;
+    private final TransactionalEmailService transactionalEmailService;
 
     public PaymentService(
             AsaasClient asaasClient,
@@ -81,7 +84,10 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             UserRepository userRepository,
             UserService userService,
-            VenueRepository venueRepository
+            VenueRepository venueRepository,
+            BookingNotificationDataLoader bookingNotificationDataLoader,
+            BookingEmailPayloadMapper bookingEmailPayloadMapper,
+            TransactionalEmailService transactionalEmailService
     ) {
         this.asaasClient = asaasClient;
         this.asaasProperties = asaasProperties;
@@ -92,6 +98,9 @@ public class PaymentService {
         this.userRepository = userRepository;
         this.userService = userService;
         this.venueRepository = venueRepository;
+        this.bookingNotificationDataLoader = bookingNotificationDataLoader;
+        this.bookingEmailPayloadMapper = bookingEmailPayloadMapper;
+        this.transactionalEmailService = transactionalEmailService;
     }
 
     @Transactional
@@ -331,6 +340,10 @@ public class PaymentService {
             booking.setCancelledAt(now);
             booking.setCancelReason("payment_window_expired");
             bookingRepository.save(booking);
+            if (PAYMENT_METHOD_PIX.equalsIgnoreCase(booking.getPaymentMethod())) {
+                bookingNotificationDataLoader.load(booking).ifPresent(d -> transactionalEmailService.scheduleAfterCommit(
+                        bookingEmailPayloadMapper.prereservationCancelled(d)));
+            }
             cancelled++;
         }
         return cancelled;

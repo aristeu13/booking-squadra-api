@@ -1,5 +1,7 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.dto.email.TemplateEmailRequest;
+import com.bookingsquadra.entity.Booking;
 import com.bookingsquadra.entity.Payment;
 import com.bookingsquadra.entity.ProcessedWebhookEvent;
 import com.bookingsquadra.repository.BookingRepository;
@@ -12,7 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,6 +27,7 @@ public class PaymentWebhookService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentWebhookService.class);
 
+    private static final String BOOKING_STATUS_PENDING = "pending";
     private static final String BOOKING_STATUS_CONFIRMED = "confirmed";
     private static final String BOOKING_STATUS_CANCELLED = "cancelled";
     private static final String PAYMENT_METHOD_PIX = "pix";
@@ -30,15 +35,24 @@ public class PaymentWebhookService {
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
     private final ProcessedWebhookEventRepository processedWebhookEventRepository;
+    private final BookingNotificationDataLoader bookingNotificationDataLoader;
+    private final BookingEmailPayloadMapper bookingEmailPayloadMapper;
+    private final TransactionalEmailService transactionalEmailService;
 
     public PaymentWebhookService(
             BookingRepository bookingRepository,
             PaymentRepository paymentRepository,
-            ProcessedWebhookEventRepository processedWebhookEventRepository
+            ProcessedWebhookEventRepository processedWebhookEventRepository,
+            BookingNotificationDataLoader bookingNotificationDataLoader,
+            BookingEmailPayloadMapper bookingEmailPayloadMapper,
+            TransactionalEmailService transactionalEmailService
     ) {
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
         this.processedWebhookEventRepository = processedWebhookEventRepository;
+        this.bookingNotificationDataLoader = bookingNotificationDataLoader;
+        this.bookingEmailPayloadMapper = bookingEmailPayloadMapper;
+        this.transactionalEmailService = transactionalEmailService;
     }
 
     @Transactional
@@ -64,6 +78,8 @@ public class PaymentWebhookService {
                     Outcome.of(Payment.STATUS_REFUND_REQUESTED, null);
             case "PAYMENT_REFUNDED" ->
                     Outcome.of(Payment.STATUS_REFUNDED, BOOKING_STATUS_CANCELLED);
+            case "PAYMENT_REFUND_DENIED" ->
+                    Outcome.of(Payment.STATUS_REFUND_DENIED, null);
             default -> {
                 log.info("Ignoring unsupported payment webhook event {}", event);
                 yield Outcome.skipped();
@@ -82,6 +98,8 @@ public class PaymentWebhookService {
         }
 
         Payment payment = paymentOpt.get();
+        String previousPaymentStatus = payment.getStatus();
+
         boolean payloadCaptured = capturePayload(payment, event, payload);
         boolean paymentChanged = false;
 
@@ -97,11 +115,18 @@ public class PaymentWebhookService {
             paymentRepository.save(payment);
         }
 
+        List<TemplateEmailRequest> emailQueue = new ArrayList<>();
+
         if (outcome.bookingStatus == null) {
+            bookingRepository.findById(payment.getBookingId()).ifPresent(booking ->
+                    appendPaymentOnlyEmails(emailQueue, event, payment, previousPaymentStatus, booking));
             markProcessed(eventId);
+            flushEmailQueue(emailQueue);
             return;
         }
+
         bookingRepository.findById(payment.getBookingId()).ifPresent(booking -> {
+            String previousBookingStatus = booking.getStatus();
             boolean bookingChanged = false;
             if (!Objects.equals(booking.getStatus(), outcome.bookingStatus)) {
                 booking.setStatus(outcome.bookingStatus);
@@ -121,8 +146,162 @@ public class PaymentWebhookService {
             if (bookingChanged) {
                 bookingRepository.save(booking);
             }
+
+            appendBookingScopedEmails(emailQueue, event, outcome, payment, previousPaymentStatus, booking, previousBookingStatus);
         });
+
         markProcessed(eventId);
+        flushEmailQueue(emailQueue);
+    }
+
+    private void flushEmailQueue(List<TemplateEmailRequest> emailQueue) {
+        for (TemplateEmailRequest request : emailQueue) {
+            transactionalEmailService.scheduleAfterCommit(request);
+        }
+    }
+
+    private void appendPaymentOnlyEmails(
+            List<TemplateEmailRequest> out,
+            String event,
+            Payment payment,
+            String previousPaymentStatus,
+            Booking booking
+    ) {
+        maybeAppendRefundInProgress(out, event, payment, previousPaymentStatus, booking);
+        maybeAppendRefundDenied(out, event, payment, previousPaymentStatus, booking);
+    }
+
+    private void appendBookingScopedEmails(
+            List<TemplateEmailRequest> out,
+            String event,
+            Outcome outcome,
+            Payment payment,
+            String previousPaymentStatus,
+            Booking booking,
+            String previousBookingStatus
+    ) {
+        maybeAppendPaymentConfirmed(out, event, outcome, booking, previousBookingStatus);
+        maybeAppendPrereservationCancelled(out, event, outcome, booking, previousBookingStatus);
+        maybeAppendRefunded(out, event, payment, previousPaymentStatus, booking);
+    }
+
+    private void maybeAppendPaymentConfirmed(
+            List<TemplateEmailRequest> out,
+            String event,
+            Outcome outcome,
+            Booking booking,
+            String previousBookingStatus
+    ) {
+        if (!"PAYMENT_RECEIVED".equals(event) && !"PAYMENT_CONFIRMED".equals(event)) {
+            return;
+        }
+        if (!BOOKING_STATUS_CONFIRMED.equals(outcome.bookingStatus)) {
+            return;
+        }
+        if (!BOOKING_STATUS_PENDING.equals(previousBookingStatus)) {
+            return;
+        }
+        bookingNotificationDataLoader.load(booking)
+                .ifPresent(d -> out.add(bookingEmailPayloadMapper.paymentConfirmed(d)));
+    }
+
+    private void maybeAppendPrereservationCancelled(
+            List<TemplateEmailRequest> out,
+            String event,
+            Outcome outcome,
+            Booking booking,
+            String previousBookingStatus
+    ) {
+        if (!"PAYMENT_DELETED".equals(event) && !"PAYMENT_OVERDUE".equals(event)) {
+            return;
+        }
+        if (!BOOKING_STATUS_CANCELLED.equals(outcome.bookingStatus)) {
+            return;
+        }
+        if (!BOOKING_STATUS_PENDING.equals(previousBookingStatus)) {
+            return;
+        }
+        if (!isPixBooking(booking)) {
+            return;
+        }
+        bookingNotificationDataLoader.load(booking)
+                .ifPresent(d -> out.add(bookingEmailPayloadMapper.prereservationCancelled(d)));
+    }
+
+    private void maybeAppendRefunded(
+            List<TemplateEmailRequest> out,
+            String event,
+            Payment payment,
+            String previousPaymentStatus,
+            Booking booking
+    ) {
+        if (!"PAYMENT_REFUNDED".equals(event)) {
+            return;
+        }
+        if (!isPixBooking(booking)) {
+            return;
+        }
+        if (Payment.STATUS_REFUNDED.equals(previousPaymentStatus)) {
+            return;
+        }
+        if (!Payment.STATUS_REFUNDED.equals(payment.getStatus())) {
+            return;
+        }
+        int cents = BookingEmailPayloadMapper.resolveRefundDisplayCents(payment);
+        bookingNotificationDataLoader.load(booking)
+                .ifPresent(d -> out.add(bookingEmailPayloadMapper.refunded(d, cents)));
+    }
+
+    private void maybeAppendRefundInProgress(
+            List<TemplateEmailRequest> out,
+            String event,
+            Payment payment,
+            String previousPaymentStatus,
+            Booking booking
+    ) {
+        if (!"PAYMENT_REFUND_IN_PROGRESS".equals(event)) {
+            return;
+        }
+        if (!isPixBooking(booking)) {
+            return;
+        }
+        if (Payment.STATUS_REFUND_REQUESTED.equals(previousPaymentStatus)) {
+            return;
+        }
+        if (!Payment.STATUS_REFUND_REQUESTED.equals(payment.getStatus())) {
+            return;
+        }
+        int cents = BookingEmailPayloadMapper.resolveRefundDisplayCents(payment);
+        bookingNotificationDataLoader.load(booking)
+                .ifPresent(d -> out.add(bookingEmailPayloadMapper.refundInProgress(d, cents)));
+    }
+
+    private void maybeAppendRefundDenied(
+            List<TemplateEmailRequest> out,
+            String event,
+            Payment payment,
+            String previousPaymentStatus,
+            Booking booking
+    ) {
+        if (!"PAYMENT_REFUND_DENIED".equals(event)) {
+            return;
+        }
+        if (!isPixBooking(booking)) {
+            return;
+        }
+        if (Payment.STATUS_REFUND_DENIED.equals(previousPaymentStatus)) {
+            return;
+        }
+        if (!Payment.STATUS_REFUND_DENIED.equals(payment.getStatus())) {
+            return;
+        }
+        bookingNotificationDataLoader.load(booking)
+                .ifPresent(d -> out.add(bookingEmailPayloadMapper.refundDenied(d)));
+    }
+
+    private static boolean isPixBooking(Booking booking) {
+        return booking.getPaymentMethod() != null
+                && PAYMENT_METHOD_PIX.equalsIgnoreCase(booking.getPaymentMethod());
     }
 
     private void markProcessed(String eventId) {
@@ -197,5 +376,4 @@ public class PaymentWebhookService {
             return new Outcome(true, null, null);
         }
     }
-
 }

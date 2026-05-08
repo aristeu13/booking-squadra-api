@@ -33,6 +33,7 @@ public class Payment {
     public static final String STATUS_OVERDUE = "OVERDUE";
     public static final String STATUS_DELETED = "DELETED";
     public static final String STATUS_REFUND_REQUESTED = "REFUND_REQUESTED";
+    public static final String STATUS_REFUND_DENIED = "REFUND_DENIED";
     public static final String STATUS_REFUNDED = "REFUNDED";
 
     public static final String BILLING_TYPE_PIX = "PIX";
