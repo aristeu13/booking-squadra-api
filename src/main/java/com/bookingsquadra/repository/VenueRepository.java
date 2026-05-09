@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface VenueRepository extends JpaRepository<Venue, UUID> {
@@ -125,4 +126,31 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
             WHERE c.venue_id = :venueId
             """, nativeQuery = true)
     long countBookingsByVenueId(@Param("venueId") UUID venueId);
+
+    @Query(value = """
+            SELECT
+                v.id              AS id,
+                v.name            AS name,
+                v.slug            AS slug,
+                v.address         AS address,
+                v.image_url       AS "imageUrl",
+                v.active          AS active,
+                (SELECT COUNT(*) FROM public.courts co
+                  WHERE co.venue_id = v.id AND co.active = true) AS "courtCount"
+            FROM public.venues v
+            JOIN public.venue_owners vo ON vo.venue_id = v.id
+            WHERE vo.user_id = :userId
+            ORDER BY v.name ASC
+            """, nativeQuery = true)
+    List<OwnerVenueSummaryProjection> findOwnedVenuesByUserId(@Param("userId") UUID userId);
+
+    interface OwnerVenueSummaryProjection {
+        UUID getId();
+        String getName();
+        String getSlug();
+        String getAddress();
+        String getImageUrl();
+        Boolean getActive();
+        Long getCourtCount();
+    }
 }

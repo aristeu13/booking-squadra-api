@@ -26,6 +26,7 @@ public class User {
 
     public static final String ROLE_USER = "user";
     public static final String ROLE_ADMIN = "admin";
+    public static final String ROLE_VENUE_OWNER = "venue_owner";
 
     public static final String STATUS_ACTIVE = "active";
     public static final String STATUS_DELETED = "deleted";

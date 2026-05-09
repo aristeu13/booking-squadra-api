@@ -117,7 +117,7 @@ public class UserService {
     }
 
     private static ProfileDto toDto(User u) {
-        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getCpf(), u.getHasUsedGoogleAuth());
+        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getCpf(), u.getHasUsedGoogleAuth(), u.getRole());
     }
 
     private static String normalizeCpf(String cpf) {
