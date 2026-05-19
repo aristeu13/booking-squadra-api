@@ -119,4 +119,49 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
         String getUserEmail();
         String getUserPhone();
     }
+
+    @Query(value = """
+            SELECT
+                COALESCE(SUM(
+                    CASE WHEN b.status IN ('pending','confirmed')
+                        THEN EXTRACT(EPOCH FROM (
+                                LEAST(b.ends_at,   :rangeEnd)
+                              - GREATEST(b.starts_at, :rangeStart)
+                            )) / 60.0
+                        ELSE 0 END
+                ), 0)::bigint AS "bookedMinutes",
+                COALESCE(SUM(
+                    CASE WHEN p.status IN ('RECEIVED','REFUND_REQUESTED','REFUND_DENIED','REFUNDED')
+                          AND b.status <> 'cancelled'
+                          AND b.starts_at >= :rangeStart
+                          AND b.starts_at <  :rangeEnd
+                        THEN p.amount_cents - COALESCE(p.refund_amount_cents, 0)
+                        ELSE 0 END
+                ), 0)::bigint AS "confirmedCents",
+                COALESCE(SUM(
+                    CASE WHEN p.status = 'PENDING'
+                          AND b.status <> 'cancelled'
+                          AND b.starts_at >= :rangeStart
+                          AND b.starts_at <  :rangeEnd
+                        THEN p.amount_cents
+                        ELSE 0 END
+                ), 0)::bigint AS "pendingCents"
+            FROM public.bookings b
+            JOIN public.courts c ON c.id = b.court_id
+            LEFT JOIN public.payments p ON p.booking_id = b.id
+            WHERE c.venue_id = :venueId
+              AND b.starts_at < :rangeEnd
+              AND b.ends_at   > :rangeStart
+            """, nativeQuery = true)
+    DashboardDayAggregateProjection aggregateDashboardForDay(
+            @Param("venueId") UUID venueId,
+            @Param("rangeStart") OffsetDateTime rangeStart,
+            @Param("rangeEnd") OffsetDateTime rangeEnd
+    );
+
+    interface DashboardDayAggregateProjection {
+        long getBookedMinutes();
+        long getConfirmedCents();
+        long getPendingCents();
+    }
 }
