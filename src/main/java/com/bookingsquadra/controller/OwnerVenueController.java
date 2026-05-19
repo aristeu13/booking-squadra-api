@@ -1,6 +1,7 @@
 package com.bookingsquadra.controller;
 
 import com.bookingsquadra.dto.OwnerBookingDto;
+import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
 import com.bookingsquadra.dto.RevenueReportDto;
 import com.bookingsquadra.service.OwnerVenueService;
@@ -40,6 +41,15 @@ public class OwnerVenueController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         return ownerVenueService.getRevenue(venueId, from, to);
+    }
+
+    @GetMapping("/{venueId}/day-overview")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public OwnerVenueDayOverviewDto dayOverview(
+            @PathVariable UUID venueId,
+            @RequestParam String date
+    ) {
+        return ownerVenueService.getDayOverview(venueId, date);
     }
 
     @GetMapping("/{venueId}/bookings")

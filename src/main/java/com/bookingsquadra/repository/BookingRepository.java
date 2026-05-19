@@ -164,4 +164,19 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
         long getConfirmedCents();
         long getPendingCents();
     }
+
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM public.bookings b
+            JOIN public.courts c ON c.id = b.court_id
+            WHERE c.venue_id = :venueId
+              AND b.status IN ('pending','confirmed')
+              AND b.starts_at < :rangeEnd
+              AND b.ends_at   > :rangeStart
+            """, nativeQuery = true)
+    long countActiveByVenueAndDateRange(
+            @Param("venueId") UUID venueId,
+            @Param("rangeStart") OffsetDateTime rangeStart,
+            @Param("rangeEnd") OffsetDateTime rangeEnd
+    );
 }

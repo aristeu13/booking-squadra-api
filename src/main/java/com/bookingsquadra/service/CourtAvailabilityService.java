@@ -25,6 +25,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -168,6 +169,107 @@ public class CourtAvailabilityService {
             int slotCount
     ) {}
 
+    public record CourtSlotInstant(
+            UUID courtId,
+            String courtName,
+            OffsetDateTime startsAt,
+            OffsetDateTime endsAt
+    ) {}
+
+    @Transactional(readOnly = true)
+    public int countVenueDayCapacity(UUID venueId, LocalDate date) {
+        Venue venue = venueOrThrow(venueId);
+        int slotMin = venue.getSlotDurationMinutes();
+        List<int[]> windows = openWindowsForDate(venueId, date);
+        if (windows.isEmpty()) return 0;
+
+        List<Court> courts = courtRepository.findByVenueIdAndActiveTrueOrderBySortOrderAsc(venueId);
+        int total = 0;
+        for (Court court : courts) {
+            List<int[]> recurringBlocks = recurringBlocksForDate(venueId, court.getId(), date);
+            for (int[] window : windows) {
+                int gridStart = window[0];
+                int windowEnd = window[1];
+                int firstK = gridStart < 0 ? Math.floorDiv(-gridStart + slotMin - 1, slotMin) : 0;
+                for (int k = firstK; ; k++) {
+                    int slotStart = gridStart + k * slotMin;
+                    int slotEnd = slotStart + slotMin;
+                    if (slotEnd > windowEnd) break;
+                    if (slotStart < 0) continue;
+                    if (overlapsAny(slotStart, slotEnd, recurringBlocks)) continue;
+                    total++;
+                }
+            }
+        }
+        return total;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CourtSlotInstant> findFirstAvailableSlotForVenue(UUID venueId, LocalDate date) {
+        Venue venue = venueOrThrow(venueId);
+        ZoneId venueZone = zoneIdForVenue(venue);
+        if (date.isBefore(LocalDate.now(venueZone))) {
+            return Optional.empty();
+        }
+
+        int slotMin = venue.getSlotDurationMinutes();
+        List<int[]> windows = openWindowsForDate(venueId, date);
+        if (windows.isEmpty()) return Optional.empty();
+        int nowCutoff = date.equals(LocalDate.now(venueZone))
+                ? toMinutes(LocalTime.now(venueZone))
+                : Integer.MIN_VALUE;
+
+        List<Court> courts = courtRepository.findByVenueIdAndActiveTrueOrderBySortOrderAsc(venueId);
+        CourtSlotInstant earliest = null;
+        int earliestMin = Integer.MAX_VALUE;
+
+        for (Court court : courts) {
+            List<int[]> blocked = blockedIntervalsForDate(court.getId(), venueId, date, venueZone);
+            for (int[] window : windows) {
+                int gridStart = window[0];
+                int windowEnd = window[1];
+                int firstK = gridStart < 0 ? Math.floorDiv(-gridStart + slotMin - 1, slotMin) : 0;
+                for (int k = firstK; ; k++) {
+                    int slotStart = gridStart + k * slotMin;
+                    int slotEnd = slotStart + slotMin;
+                    if (slotEnd > windowEnd) break;
+                    if (slotStart < 0) continue;
+                    if (slotStart < nowCutoff) continue;
+                    if (overlapsAny(slotStart, slotEnd, blocked)) continue;
+                    if (slotStart < earliestMin) {
+                        earliestMin = slotStart;
+                        ZonedDateTime startLocal = date.atStartOfDay(venueZone).plusMinutes(slotStart);
+                        ZonedDateTime endLocal   = date.atStartOfDay(venueZone).plusMinutes(slotEnd);
+                        earliest = new CourtSlotInstant(
+                                court.getId(),
+                                court.getName(),
+                                startLocal.withZoneSameInstant(ZoneOffset.UTC).toOffsetDateTime(),
+                                endLocal.withZoneSameInstant(ZoneOffset.UTC).toOffsetDateTime()
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+        return Optional.ofNullable(earliest);
+    }
+
+    private List<int[]> recurringBlocksForDate(UUID venueId, UUID courtId, LocalDate date) {
+        List<int[]> blocked = new ArrayList<>();
+        short dow = (short) (date.getDayOfWeek().getValue() % 7);
+        recurringTimeBlockRepository.findApplicableForDate(venueId, courtId, dow, date)
+                .forEach(rb -> blocked.add(new int[]{
+                        toMinutes(rb.getStartTime()), toMinutes(rb.getEndTime())}));
+        // overnight window: also include next-day blocks shifted by +1440
+        LocalDate next = date.plusDays(1);
+        short nextDow = (short) (next.getDayOfWeek().getValue() % 7);
+        recurringTimeBlockRepository.findApplicableForDate(venueId, courtId, nextDow, next)
+                .forEach(rb -> blocked.add(new int[]{
+                        MINUTES_PER_DAY + toMinutes(rb.getStartTime()),
+                        MINUTES_PER_DAY + toMinutes(rb.getEndTime())}));
+        return blocked;
+    }
+
     private Court activeCourtOrThrow(UUID courtId) {
         Court court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Court not found"));
@@ -184,6 +286,12 @@ public class CourtAvailabilityService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
         }
         return venue;
+    }
+
+
+    private Venue venueOrThrow(UUID venueId) {
+        return venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
     }
 
     private ZoneId zoneIdForVenue(Venue venue) {
