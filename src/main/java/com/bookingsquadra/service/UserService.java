@@ -6,6 +6,7 @@ import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.UserOtp;
 import com.bookingsquadra.repository.UserOtpRepository;
 import com.bookingsquadra.repository.UserRepository;
+import com.bookingsquadra.util.BrazilPhoneNormalizer;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -49,7 +50,9 @@ public class UserService {
             user.setName(body.name());
         }
         if (body.phone() != null) {
-            user.setPhone(body.phone());
+            user.setPhone(body.phone().isBlank()
+                    ? null
+                    : BrazilPhoneNormalizer.normalizeOrThrow(body.phone()));
         }
         if (body.cpf() != null) {
             user.setCpf(normalizeCpf(body.cpf()));
