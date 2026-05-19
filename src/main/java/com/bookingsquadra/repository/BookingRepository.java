@@ -71,9 +71,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                 c.id              AS "courtId",
                 c.name            AS "courtName",
                 u.id              AS "userId",
-                u.name            AS "userName",
+                COALESCE(u.name,  b.customer_name)  AS "userName",
                 u.email           AS "userEmail",
-                u.phone           AS "userPhone"
+                COALESCE(u.phone, b.customer_phone) AS "userPhone"
             FROM public.bookings b
             JOIN public.courts c ON c.id = b.court_id
             LEFT JOIN public.users u   ON u.id = b.user_id
@@ -190,8 +190,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                 b.amount_cents    AS "amountCents",
                 b.note            AS note,
                 p.status          AS "paymentStatus",
-                u.name            AS "userName",
-                u.phone           AS "userPhone"
+                COALESCE(u.name,  b.customer_name)  AS "userName",
+                COALESCE(u.phone, b.customer_phone) AS "userPhone"
             FROM public.bookings b
             LEFT JOIN public.users u    ON u.id = b.user_id
             LEFT JOIN public.payments p ON p.booking_id = b.id

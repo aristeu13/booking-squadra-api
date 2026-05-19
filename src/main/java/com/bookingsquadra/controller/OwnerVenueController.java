@@ -1,6 +1,8 @@
 package com.bookingsquadra.controller;
 
+import com.bookingsquadra.dto.BookingDto;
 import com.bookingsquadra.dto.CourtDto;
+import com.bookingsquadra.dto.CreateOwnerBookingDto;
 import com.bookingsquadra.dto.OwnerBookingDto;
 import com.bookingsquadra.dto.OwnerDashboardSummaryDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
@@ -8,13 +10,15 @@ import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
 import com.bookingsquadra.service.OwnerDashboardService;
 import com.bookingsquadra.service.OwnerVenueService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -75,6 +79,26 @@ public class OwnerVenueController {
             @RequestParam String date
     ) {
         return ownerVenueService.getCourtDay(venueId, courtId, date);
+    }
+
+    @PostMapping("/{venueId}/bookings")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public ResponseEntity<BookingDto> createManualBooking(
+            @PathVariable UUID venueId,
+            @Valid @RequestBody CreateOwnerBookingDto body
+    ) {
+        BookingDto created = ownerVenueService.createManualBooking(venueId, body);
+        return ResponseEntity.status(201).body(created);
+    }
+
+    @PostMapping("/{venueId}/bookings/{bookingId}/cancel")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public ResponseEntity<Void> cancelManualBooking(
+            @PathVariable UUID venueId,
+            @PathVariable UUID bookingId
+    ) {
+        ownerVenueService.cancelManualBooking(venueId, bookingId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{venueId}/bookings/{bookingId}/no-show")

@@ -70,6 +70,12 @@ public class Booking {
     @Column(name = "no_show", nullable = false)
     private Boolean noShow;
 
+    @Column(name = "customer_name")
+    private String customerName;
+
+    @Column(name = "customer_phone")
+    private String customerPhone;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 

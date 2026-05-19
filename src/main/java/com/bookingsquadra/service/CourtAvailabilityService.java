@@ -33,6 +33,7 @@ import java.util.UUID;
 public class CourtAvailabilityService {
 
     private static final int MINUTES_PER_DAY = 24 * 60;
+    private static final int OWNER_BACKDATE_LIMIT_DAYS = 7;
     private static final DateTimeFormatter SLOT_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final Set<String> ACTIVE_STATUSES = Set.of("pending", "confirmed");
 
@@ -107,13 +108,32 @@ public class CourtAvailabilityService {
     @Transactional(readOnly = true)
     public ValidatedSlot validateBookingSlot(UUID courtId, LocalDate date,
                                              LocalTime startTime, LocalTime endTime) {
+        return validateBookingSlot(courtId, date, startTime, endTime, false);
+    }
+
+    /**
+     * Variant for owner-initiated bookings. When {@code allowPast} is true the past-date and
+     * past-start-time guards are relaxed (capped at {@link #OWNER_BACKDATE_LIMIT_DAYS} days back),
+     * so owners can log walk-ins after the fact.
+     */
+    @Transactional(readOnly = true)
+    public ValidatedSlot validateBookingSlot(UUID courtId, LocalDate date,
+                                             LocalTime startTime, LocalTime endTime,
+                                             boolean allowPast) {
         Court court = activeCourtOrThrow(courtId);
         Venue venue = activeVenueOrThrow(court.getVenueId());
         ZoneId venueZone = zoneIdForVenue(venue);
 
-        if (date.isBefore(LocalDate.now(venueZone))) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "booking_date is in the past");
+        LocalDate today = LocalDate.now(venueZone);
+        if (date.isBefore(today)) {
+            if (!allowPast) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "booking_date is in the past");
+            }
+            if (date.isBefore(today.minusDays(OWNER_BACKDATE_LIMIT_DAYS))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "booking_date is more than " + OWNER_BACKDATE_LIMIT_DAYS + " days in the past");
+            }
         }
 
         int slotMin = venue.getSlotDurationMinutes();
@@ -132,7 +152,7 @@ public class CourtAvailabilityService {
                 .atZone(venueZone);
         OffsetDateTime startsAt = localStartsAt.withZoneSameInstant(ZoneOffset.UTC).toOffsetDateTime();
         OffsetDateTime endsAt = localEndsAt.withZoneSameInstant(ZoneOffset.UTC).toOffsetDateTime();
-        if (!startsAt.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (!allowPast && !startsAt.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "start_time has already passed");
         }

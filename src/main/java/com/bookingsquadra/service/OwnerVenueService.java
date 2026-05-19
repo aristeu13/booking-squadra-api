@@ -1,6 +1,8 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.dto.BookingDto;
 import com.bookingsquadra.dto.CourtDto;
+import com.bookingsquadra.dto.CreateOwnerBookingDto;
 import com.bookingsquadra.dto.OwnerBookingDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
@@ -21,6 +23,8 @@ import com.bookingsquadra.repository.CourtRepository;
 import com.bookingsquadra.repository.OperatingHoursRepository;
 import com.bookingsquadra.repository.RecurringTimeBlockRepository;
 import com.bookingsquadra.repository.VenueRepository;
+import com.bookingsquadra.util.BrazilPhoneNormalizer;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
@@ -154,6 +158,98 @@ public class OwnerVenueService {
                 zone.getId(),
                 new OwnerVenueDayOverviewDto.Reservations(count, capacity),
                 nextSlot
+        );
+    }
+
+    @Transactional
+    public BookingDto createManualBooking(UUID venueId, CreateOwnerBookingDto body) {
+        Venue venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new NotFoundException("Venue not found"));
+        Court court = courtRepository.findById(body.courtId())
+                .orElseThrow(() -> new NotFoundException("Court not found"));
+        if (!venueId.equals(court.getVenueId())) {
+            throw new NotFoundException("Court not found");
+        }
+
+        String normalizedPhone = BrazilPhoneNormalizer.normalizeOrThrow(body.customerPhone());
+        boolean allowPast = Boolean.TRUE.equals(body.allowPast());
+
+        CourtAvailabilityService.ValidatedSlot validated = courtAvailabilityService
+                .validateBookingSlot(body.courtId(), body.bookingDate(), body.startTime(), body.endTime(), allowPast);
+
+        int amountCents = Math.multiplyExact(venue.getPriceCents(), validated.slotCount());
+
+        Booking booking = Booking.builder()
+                .bookingType("manual")
+                .userId(null)
+                .courtId(body.courtId())
+                .startsAt(validated.startsAt())
+                .endsAt(validated.endsAt())
+                .venueTimezone(validated.venueTimezone())
+                .status("confirmed")
+                .paymentMethod("local")
+                .amountCents(amountCents)
+                .note(body.note())
+                .customerName(body.customerName().trim())
+                .customerPhone(normalizedPhone)
+                .noShow(false)
+                .expiresAt(null)
+                .build();
+
+        Booking saved;
+        try {
+            saved = bookingRepository.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException e) {
+            if (e.getMessage() != null && e.getMessage().contains("bookings_no_overlap")) {
+                throw new ConflictException("slot_overlap", "slot overlaps an existing booking");
+            }
+            throw e;
+        }
+        return toBookingDto(saved);
+    }
+
+    @Transactional
+    public void cancelManualBooking(UUID venueId, UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new NotFoundException("Booking not found"));
+        Court court = courtRepository.findById(booking.getCourtId())
+                .orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (!venueId.equals(court.getVenueId())) {
+            throw new NotFoundException("Booking not found");
+        }
+        if (!"manual".equals(booking.getBookingType())) {
+            throw new ConflictException("not_manual_booking",
+                    "Only manual bookings can be cancelled by the owner");
+        }
+        if ("cancelled".equals(booking.getStatus())) {
+            return;
+        }
+        if (!booking.getStartsAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+            throw new ConflictException("not_cancellable",
+                    "Booking already started; use no-show instead");
+        }
+        booking.setStatus("cancelled");
+        booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
+        booking.setCancelReason("owner_cancelled");
+        bookingRepository.save(booking);
+    }
+
+    private static BookingDto toBookingDto(Booking b) {
+        ZoneId zone = ZoneId.of(b.getVenueTimezone());
+        return new BookingDto(
+                b.getId(),
+                b.getUserId(),
+                b.getCourtId(),
+                b.getStartsAt(),
+                b.getEndsAt(),
+                b.getVenueTimezone(),
+                b.getStartsAt().atZoneSameInstant(zone).toLocalDate(),
+                b.getStartsAt().atZoneSameInstant(zone).toLocalTime(),
+                b.getEndsAt().atZoneSameInstant(zone).toLocalTime(),
+                b.getStatus(),
+                b.getBookingType(),
+                b.getNote(),
+                b.getExpiresAt()
         );
     }
 
