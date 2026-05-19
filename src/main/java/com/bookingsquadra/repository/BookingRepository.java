@@ -179,4 +179,44 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("rangeStart") OffsetDateTime rangeStart,
             @Param("rangeEnd") OffsetDateTime rangeEnd
     );
+
+    @Query(value = """
+            SELECT
+                b.id              AS id,
+                b.starts_at       AS "startsAt",
+                b.ends_at         AS "endsAt",
+                b.status          AS status,
+                b.booking_type    AS "bookingType",
+                b.amount_cents    AS "amountCents",
+                b.note            AS note,
+                p.status          AS "paymentStatus",
+                u.name            AS "userName",
+                u.phone           AS "userPhone"
+            FROM public.bookings b
+            LEFT JOIN public.users u    ON u.id = b.user_id
+            LEFT JOIN public.payments p ON p.booking_id = b.id
+            WHERE b.court_id = :courtId
+              AND b.status <> 'cancelled'
+              AND b.starts_at < :rangeEnd
+              AND b.ends_at   > :rangeStart
+            ORDER BY b.starts_at ASC, b.id ASC
+            """, nativeQuery = true)
+    List<CourtDayReservationProjection> findCourtDayReservations(
+            @Param("courtId") UUID courtId,
+            @Param("rangeStart") OffsetDateTime rangeStart,
+            @Param("rangeEnd") OffsetDateTime rangeEnd
+    );
+
+    interface CourtDayReservationProjection {
+        UUID getId();
+        OffsetDateTime getStartsAt();
+        OffsetDateTime getEndsAt();
+        String getStatus();
+        String getBookingType();
+        Integer getAmountCents();
+        String getNote();
+        String getPaymentStatus();
+        String getUserName();
+        String getUserPhone();
+    }
 }

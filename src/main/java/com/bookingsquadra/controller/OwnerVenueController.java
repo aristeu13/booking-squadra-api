@@ -1,6 +1,7 @@
 package com.bookingsquadra.controller;
 
 import com.bookingsquadra.dto.OwnerBookingDto;
+import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
 import com.bookingsquadra.dto.RevenueReportDto;
@@ -50,6 +51,16 @@ public class OwnerVenueController {
             @RequestParam String date
     ) {
         return ownerVenueService.getDayOverview(venueId, date);
+    }
+
+    @GetMapping("/{venueId}/courts/{courtId}/day")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public OwnerVenueCourtDayDto courtDay(
+            @PathVariable UUID venueId,
+            @PathVariable UUID courtId,
+            @RequestParam String date
+    ) {
+        return ownerVenueService.getCourtDay(venueId, courtId, date);
     }
 
     @GetMapping("/{venueId}/bookings")
