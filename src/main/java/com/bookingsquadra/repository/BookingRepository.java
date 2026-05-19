@@ -207,6 +207,51 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("rangeEnd") OffsetDateTime rangeEnd
     );
 
+    /**
+     * Counts past, successful, PIX-prepaid bookings for the user at the venue, since the most
+     * recent "reset event". Reset events are no-shows or late cancellations on local-payment
+     * bookings (cancelled within {@code localCancelHours} of {@code starts_at}). Bookings prior
+     * to the latest reset don't count toward the trust threshold.
+     */
+    @Query(value = """
+            WITH recent_reset AS (
+                SELECT MAX(b.starts_at) AS reset_at
+                FROM public.bookings b
+                JOIN public.courts c ON c.id = b.court_id
+                WHERE c.venue_id = :venueId
+                  AND b.user_id  = :userId
+                  AND (
+                    b.no_show = TRUE
+                    OR (
+                        b.status = 'cancelled'
+                        AND b.payment_method = 'local'
+                        AND b.cancelled_at IS NOT NULL
+                        AND b.cancelled_at > b.starts_at - (INTERVAL '1 hour' * :localCancelHours)
+                    )
+                  )
+            )
+            SELECT COUNT(*)
+            FROM public.bookings b
+            JOIN public.courts   c ON c.id = b.court_id
+            JOIN public.payments p ON p.booking_id = b.id
+            WHERE c.venue_id = :venueId
+              AND b.user_id  = :userId
+              AND b.status   = 'confirmed'
+              AND b.payment_method = 'pix'
+              AND p.status   = 'RECEIVED'
+              AND b.no_show  = FALSE
+              AND b.ends_at  < now()
+              AND (
+                (SELECT reset_at FROM recent_reset) IS NULL
+                OR b.starts_at > (SELECT reset_at FROM recent_reset)
+              )
+            """, nativeQuery = true)
+    long countSuccessfulPrePaidSinceReset(
+            @Param("userId") UUID userId,
+            @Param("venueId") UUID venueId,
+            @Param("localCancelHours") short localCancelHours
+    );
+
     interface CourtDayReservationProjection {
         UUID getId();
         OffsetDateTime getStartsAt();

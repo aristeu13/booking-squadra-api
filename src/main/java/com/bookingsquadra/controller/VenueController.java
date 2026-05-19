@@ -1,11 +1,13 @@
 package com.bookingsquadra.controller;
 
-import com.bookingsquadra.dto.BookingCountDto;
 import com.bookingsquadra.dto.CancelPolicyDto;
+import com.bookingsquadra.dto.LocalPaymentEligibilityDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.dto.VenueResponseDto;
 import com.bookingsquadra.entity.Amenity;
 import com.bookingsquadra.entity.Sport;
+import com.bookingsquadra.service.LocalPaymentEligibilityService;
+import com.bookingsquadra.service.UserService;
 import com.bookingsquadra.service.VenueService;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,9 +24,17 @@ import java.util.UUID;
 public class VenueController {
 
     private final VenueService venueService;
+    private final LocalPaymentEligibilityService localPaymentEligibilityService;
+    private final UserService userService;
 
-    public VenueController(VenueService venueService) {
+    public VenueController(
+            VenueService venueService,
+            LocalPaymentEligibilityService localPaymentEligibilityService,
+            UserService userService
+    ) {
         this.venueService = venueService;
+        this.localPaymentEligibilityService = localPaymentEligibilityService;
+        this.userService = userService;
     }
 
     @GetMapping
@@ -50,9 +60,10 @@ public class VenueController {
         return venueService.getById(id, lat, lon);
     }
 
-    @GetMapping("/{id}/bookings/count")
-    public BookingCountDto bookingsCount(@PathVariable UUID id) {
-        return venueService.countBookings(id);
+    @GetMapping("/{id}/local-payment-eligibility")
+    public LocalPaymentEligibilityDto localPaymentEligibility(@PathVariable UUID id) {
+        UUID userId = userService.findCurrentOrThrow().getId();
+        return localPaymentEligibilityService.evaluate(userId, id);
     }
 
     @GetMapping("/{id}/cancel-policy")

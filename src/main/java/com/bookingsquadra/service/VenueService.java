@@ -1,6 +1,5 @@
 package com.bookingsquadra.service;
 
-import com.bookingsquadra.dto.BookingCountDto;
 import com.bookingsquadra.dto.CancelPolicyDto;
 import com.bookingsquadra.dto.CourtDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
@@ -122,14 +121,6 @@ public class VenueService {
                 .orElse(null);
         Double distanceKm = haversineKm(lat, lon, venue.getLatitude(), venue.getLongitude());
         return toVenueDto(venue, city, courts, hours, policy, distanceKm);
-    }
-
-    @Transactional(readOnly = true)
-    public BookingCountDto countBookings(UUID venueId) {
-        if (!venueRepository.existsById(venueId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found");
-        }
-        return new BookingCountDto(venueId, venueRepository.countBookingsByVenueId(venueId));
     }
 
     @Transactional(readOnly = true)

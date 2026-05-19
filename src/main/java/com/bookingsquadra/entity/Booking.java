@@ -67,6 +67,9 @@ public class Booking {
     @Column(name = "cancel_reason")
     private String cancelReason;
 
+    @Column(name = "no_show", nullable = false)
+    private Boolean noShow;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 

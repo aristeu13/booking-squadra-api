@@ -5,12 +5,14 @@ import com.bookingsquadra.dto.OwnerBookingDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
+import com.bookingsquadra.entity.Booking;
 import com.bookingsquadra.entity.City;
 import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
 import com.bookingsquadra.entity.Payment;
 import com.bookingsquadra.entity.RecurringTimeBlock;
 import com.bookingsquadra.entity.Venue;
+import com.bookingsquadra.exception.ConflictException;
 import com.bookingsquadra.exception.NotFoundException;
 import com.bookingsquadra.exception.UnprocessableEntityException;
 import com.bookingsquadra.repository.BookingRepository;
@@ -30,6 +32,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -152,6 +155,30 @@ public class OwnerVenueService {
                 new OwnerVenueDayOverviewDto.Reservations(count, capacity),
                 nextSlot
         );
+    }
+
+    @Transactional
+    public void markBookingNoShow(UUID venueId, UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new NotFoundException("Booking not found"));
+        Court court = courtRepository.findById(booking.getCourtId())
+                .orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (!venueId.equals(court.getVenueId())) {
+            throw new NotFoundException("Booking not found");
+        }
+        if (!"confirmed".equals(booking.getStatus())) {
+            throw new ConflictException("not_confirmed",
+                    "Only confirmed bookings can be marked as no-show");
+        }
+        if (!booking.getEndsAt().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
+            throw new ConflictException("not_past",
+                    "Bookings can only be marked as no-show after they have ended");
+        }
+        if (Boolean.TRUE.equals(booking.getNoShow())) {
+            return;
+        }
+        booking.setNoShow(true);
+        bookingRepository.save(booking);
     }
 
     @Transactional(readOnly = true)

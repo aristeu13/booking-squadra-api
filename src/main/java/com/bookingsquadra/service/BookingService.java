@@ -39,8 +39,10 @@ public class BookingService {
 
     private static final String BOOKING_TYPE_RESERVATION = "reservation";
     private static final String STATUS_PENDING = "pending";
+    private static final String STATUS_CONFIRMED = "confirmed";
     private static final String STATUS_CANCELLED = "cancelled";
     private static final String PAYMENT_METHOD_PIX = "pix";
+    private static final String PAYMENT_METHOD_LOCAL = "local";
 
     private final BookingRepository bookingRepository;
     private final CancelPolicyRepository cancelPolicyRepository;
@@ -50,6 +52,7 @@ public class BookingService {
     private final UserService userService;
     private final CourtAvailabilityService courtAvailabilityService;
     private final PaymentService paymentService;
+    private final LocalPaymentEligibilityService localPaymentEligibilityService;
     private final AsaasProperties asaasProperties;
     private final BookingNotificationDataLoader bookingNotificationDataLoader;
     private final BookingEmailPayloadMapper bookingEmailPayloadMapper;
@@ -64,6 +67,7 @@ public class BookingService {
             UserService userService,
             CourtAvailabilityService courtAvailabilityService,
             PaymentService paymentService,
+            LocalPaymentEligibilityService localPaymentEligibilityService,
             AsaasProperties asaasProperties,
             BookingNotificationDataLoader bookingNotificationDataLoader,
             BookingEmailPayloadMapper bookingEmailPayloadMapper,
@@ -76,6 +80,7 @@ public class BookingService {
         this.userService = userService;
         this.courtAvailabilityService = courtAvailabilityService;
         this.paymentService = paymentService;
+        this.localPaymentEligibilityService = localPaymentEligibilityService;
         this.asaasProperties = asaasProperties;
         this.bookingNotificationDataLoader = bookingNotificationDataLoader;
         this.bookingEmailPayloadMapper = bookingEmailPayloadMapper;
@@ -100,8 +105,19 @@ public class BookingService {
         Venue venue = validated.venue();
         int amountCents = Math.multiplyExact(venue.getPriceCents(), validated.slotCount());
 
-        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
-                .plusMinutes(asaasProperties.bookingGraceMinutesOrDefault());
+        boolean payLocal = PAYMENT_METHOD_LOCAL.equals(body.paymentMethod());
+        if (payLocal) {
+            var eligibility = localPaymentEligibilityService.evaluate(user.getId(), venue.getId());
+            if (!eligibility.eligible()) {
+                throw new ConflictException("local_payment_not_eligible",
+                        "Você precisa de " + eligibility.threshold()
+                                + " reservas pagas via PIX neste local antes de pagar presencialmente.");
+            }
+        }
+
+        OffsetDateTime expiresAt = payLocal
+                ? null
+                : OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(asaasProperties.bookingGraceMinutesOrDefault());
 
         Booking booking = Booking.builder()
                 .bookingType(BOOKING_TYPE_RESERVATION)
@@ -110,8 +126,10 @@ public class BookingService {
                 .startsAt(validated.startsAt())
                 .endsAt(validated.endsAt())
                 .venueTimezone(validated.venueTimezone())
-                .status(STATUS_PENDING)
+                .status(payLocal ? STATUS_CONFIRMED : STATUS_PENDING)
+                .paymentMethod(payLocal ? PAYMENT_METHOD_LOCAL : null)
                 .amountCents(amountCents)
+                .noShow(false)
                 .note(body.note())
                 .expiresAt(expiresAt)
                 .build();

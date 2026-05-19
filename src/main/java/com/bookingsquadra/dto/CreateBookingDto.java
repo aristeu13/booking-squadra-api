@@ -1,6 +1,7 @@
 package com.bookingsquadra.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
 
@@ -22,6 +23,9 @@ public record CreateBookingDto(
         @NotNull
         @DateTimeFormat(iso = DateTimeFormat.ISO.TIME)
         LocalTime endTime,
+
+        @Pattern(regexp = "pix|local", message = "paymentMethod must be 'pix' or 'local'")
+        String paymentMethod,
 
         @Size(max = 1000) String note
 ) {}

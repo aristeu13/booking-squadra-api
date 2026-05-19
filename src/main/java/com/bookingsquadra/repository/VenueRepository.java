@@ -120,14 +120,6 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
     );
 
     @Query(value = """
-            SELECT COUNT(*)
-            FROM public.bookings b
-            JOIN public.courts c ON c.id = b.court_id
-            WHERE c.venue_id = :venueId
-            """, nativeQuery = true)
-    long countBookingsByVenueId(@Param("venueId") UUID venueId);
-
-    @Query(value = """
             SELECT
                 v.id              AS id,
                 v.name            AS name,
