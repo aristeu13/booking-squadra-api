@@ -4,7 +4,6 @@ import com.bookingsquadra.dto.OwnerBookingDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
-import com.bookingsquadra.dto.RevenueReportDto;
 import com.bookingsquadra.service.OwnerVenueService;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -32,16 +31,6 @@ public class OwnerVenueController {
     @GetMapping
     public List<OwnerVenueSummaryDto> listOwned() {
         return ownerVenueService.listOwnedVenues();
-    }
-
-    @GetMapping("/{venueId}/revenue")
-    @PreAuthorize("@venueAccess.canManage(#venueId)")
-    public RevenueReportDto revenue(
-            @PathVariable UUID venueId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
-    ) {
-        return ownerVenueService.getRevenue(venueId, from, to);
     }
 
     @GetMapping("/{venueId}/day-overview")
