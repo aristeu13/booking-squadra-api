@@ -1,9 +1,12 @@
 package com.bookingsquadra.controller;
 
+import com.bookingsquadra.dto.CourtDto;
 import com.bookingsquadra.dto.OwnerBookingDto;
+import com.bookingsquadra.dto.OwnerDashboardSummaryDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
 import com.bookingsquadra.dto.OwnerVenueSummaryDto;
+import com.bookingsquadra.service.OwnerDashboardService;
 import com.bookingsquadra.service.OwnerVenueService;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -23,14 +26,34 @@ import java.util.UUID;
 public class OwnerVenueController {
 
     private final OwnerVenueService ownerVenueService;
+    private final OwnerDashboardService ownerDashboardService;
 
-    public OwnerVenueController(OwnerVenueService ownerVenueService) {
+    public OwnerVenueController(
+            OwnerVenueService ownerVenueService,
+            OwnerDashboardService ownerDashboardService
+    ) {
         this.ownerVenueService = ownerVenueService;
+        this.ownerDashboardService = ownerDashboardService;
     }
 
     @GetMapping
     public List<OwnerVenueSummaryDto> listOwned() {
         return ownerVenueService.listOwnedVenues();
+    }
+
+    @GetMapping("/{venueId}/courts")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public List<CourtDto> courts(@PathVariable UUID venueId) {
+        return ownerVenueService.listVenueCourts(venueId);
+    }
+
+    @GetMapping("/{venueId}/dashboard-summary")
+    @PreAuthorize("@venueAccess.canManage(#venueId)")
+    public OwnerDashboardSummaryDto dashboardSummary(
+            @PathVariable UUID venueId,
+            @RequestParam(name = "date", required = false) String date
+    ) {
+        return ownerDashboardService.getSummary(venueId, date);
     }
 
     @GetMapping("/{venueId}/day-overview")

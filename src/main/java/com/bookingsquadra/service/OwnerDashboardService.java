@@ -6,8 +6,6 @@ import com.bookingsquadra.entity.Court;
 import com.bookingsquadra.entity.OperatingHours;
 import com.bookingsquadra.entity.RecurringTimeBlock;
 import com.bookingsquadra.entity.Venue;
-import com.bookingsquadra.exception.BadRequestException;
-import com.bookingsquadra.exception.ForbiddenException;
 import com.bookingsquadra.exception.NotFoundException;
 import com.bookingsquadra.exception.UnprocessableEntityException;
 import com.bookingsquadra.repository.BookingRepository;
@@ -15,15 +13,10 @@ import com.bookingsquadra.repository.CityRepository;
 import com.bookingsquadra.repository.CourtRepository;
 import com.bookingsquadra.repository.OperatingHoursRepository;
 import com.bookingsquadra.repository.RecurringTimeBlockRepository;
-import com.bookingsquadra.repository.VenueOwnerRepository;
 import com.bookingsquadra.repository.VenueRepository;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -38,14 +31,12 @@ import java.util.UUID;
 public class OwnerDashboardService {
 
     private static final int MINUTES_PER_DAY = 24 * 60;
-    private static final String ROLE_ADMIN = "ROLE_ADMIN";
     private static final String CURRENCY_BRL = "BRL";
     private static final String COMPARE_PERIOD = "yesterday";
     private static final DateTimeFormatter ISO_DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withResolverStyle(ResolverStyle.STRICT);
 
     private final VenueRepository venueRepository;
-    private final VenueOwnerRepository venueOwnerRepository;
     private final CityRepository cityRepository;
     private final CourtRepository courtRepository;
     private final OperatingHoursRepository operatingHoursRepository;
@@ -54,7 +45,6 @@ public class OwnerDashboardService {
 
     public OwnerDashboardService(
             VenueRepository venueRepository,
-            VenueOwnerRepository venueOwnerRepository,
             CityRepository cityRepository,
             CourtRepository courtRepository,
             OperatingHoursRepository operatingHoursRepository,
@@ -62,7 +52,6 @@ public class OwnerDashboardService {
             BookingRepository bookingRepository
     ) {
         this.venueRepository = venueRepository;
-        this.venueOwnerRepository = venueOwnerRepository;
         this.cityRepository = cityRepository;
         this.courtRepository = courtRepository;
         this.operatingHoursRepository = operatingHoursRepository;
@@ -71,14 +60,11 @@ public class OwnerDashboardService {
     }
 
     @Transactional(readOnly = true)
-    public OwnerDashboardSummaryDto getSummary(UUID venueId, String dateParam, String tzOverride) {
-        UUID resolvedVenueId = resolveVenueId(venueId);
-        authorize(resolvedVenueId);
-
-        Venue venue = venueRepository.findById(resolvedVenueId)
+    public OwnerDashboardSummaryDto getSummary(UUID venueId, String dateParam) {
+        Venue venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new NotFoundException("venue_not_found", "Venue not found"));
 
-        ZoneId zone = resolveZone(venue, tzOverride);
+        ZoneId zone = resolveVenueZone(venue);
         LocalDate date = parseDate(dateParam, zone);
         LocalDate yesterday = date.minusDays(1);
 
@@ -103,7 +89,7 @@ public class OwnerDashboardService {
         );
 
         return new OwnerDashboardSummaryDto(
-                resolvedVenueId,
+                venueId,
                 date,
                 zone.getId(),
                 OffsetDateTime.now(zone),
@@ -112,37 +98,7 @@ public class OwnerDashboardService {
         );
     }
 
-    private UUID resolveVenueId(UUID requested) {
-        if (requested != null) {
-            return requested;
-        }
-        if (isAdmin()) {
-            throw new BadRequestException("venue_required", "venueId is required");
-        }
-        List<UUID> owned = venueOwnerRepository.findVenueIdsByUserId(currentUserId());
-        if (owned.size() == 1) {
-            return owned.get(0);
-        }
-        throw new BadRequestException("venue_required", "venueId is required");
-    }
-
-    private void authorize(UUID venueId) {
-        if (isAdmin()) {
-            return;
-        }
-        if (!venueOwnerRepository.existsByUserIdAndVenueId(currentUserId(), venueId)) {
-            throw new ForbiddenException("not_venue_owner", "Caller is not an owner of this venue");
-        }
-    }
-
-    private ZoneId resolveZone(Venue venue, String tzOverride) {
-        if (tzOverride != null && !tzOverride.isBlank()) {
-            try {
-                return ZoneId.of(tzOverride);
-            } catch (DateTimeException e) {
-                throw new UnprocessableEntityException("invalid_timezone", "tz is not a valid IANA timezone");
-            }
-        }
+    private ZoneId resolveVenueZone(Venue venue) {
         City city = cityRepository.findById(venue.getCityId())
                 .orElseThrow(() -> new NotFoundException("Venue city not found"));
         return ZoneId.of(city.getTimezone());
@@ -248,22 +204,6 @@ public class OwnerDashboardService {
 
     private static double round2(double value) {
         return Math.round(value * 100.0) / 100.0;
-    }
-
-    private static boolean isAdmin() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return false;
-        for (GrantedAuthority authority : auth.getAuthorities()) {
-            if (ROLE_ADMIN.equals(authority.getAuthority())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static UUID currentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return UUID.fromString(auth.getName());
     }
 
     private record DayMetrics(long bookedMinutes, long availableMinutes, long confirmedCents, long pendingCents) {

@@ -1,5 +1,6 @@
 package com.bookingsquadra.service;
 
+import com.bookingsquadra.dto.CourtDto;
 import com.bookingsquadra.dto.OwnerBookingDto;
 import com.bookingsquadra.dto.OwnerVenueCourtDayDto;
 import com.bookingsquadra.dto.OwnerVenueDayOverviewDto;
@@ -151,6 +152,24 @@ public class OwnerVenueService {
                 new OwnerVenueDayOverviewDto.Reservations(count, capacity),
                 nextSlot
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<CourtDto> listVenueCourts(UUID venueId) {
+        if (!venueRepository.existsById(venueId)) {
+            throw new NotFoundException("Venue not found");
+        }
+        return courtRepository.findByVenueIdOrderBySortOrderAsc(venueId).stream()
+                .map(c -> new CourtDto(
+                        c.getId(),
+                        c.getVenueId(),
+                        c.getName(),
+                        c.getSurfaceType(),
+                        c.getIndoor(),
+                        c.getSortOrder(),
+                        c.getActive()
+                ))
+                .toList();
     }
 
     @Transactional(readOnly = true)

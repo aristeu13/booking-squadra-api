@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface CourtRepository extends JpaRepository<Court, UUID> {
 
     List<Court> findByVenueIdAndActiveTrueOrderBySortOrderAsc(UUID venueId);
+
+    List<Court> findByVenueIdOrderBySortOrderAsc(UUID venueId);
 }
