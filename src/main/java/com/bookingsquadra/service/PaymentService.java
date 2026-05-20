@@ -135,6 +135,13 @@ public class PaymentService {
         ensureUserBillingDetails(user, request);
         ensureAsaasCustomer(user);
 
+        int mainAccountShareCents = asaasProperties.mainAccountShareCentsOrDefault();
+        int venueShareCents = booking.getAmountCents() - mainAccountShareCents;
+        if (venueShareCents <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                    "Booking amount is too low to cover the platform share");
+        }
+
         AsaasPaymentRequest paymentRequest = new AsaasPaymentRequest(
                 user.getAsaasCustomerId(),
                 Payment.BILLING_TYPE_PIX,
@@ -143,8 +150,8 @@ public class PaymentService {
                 booking.getId().toString(),
                 List.of(new AsaasSplitRequest(
                         venue.getAsaasWalletId(),
-                        BigDecimal.valueOf(100),
-                        null
+                        null,
+                        fromCents(venueShareCents)
                 ))
         );
 
@@ -247,28 +254,29 @@ public class PaymentService {
         int amountCents = payment.getAmountCents();
         int grossCents = Math.floorDiv(amountCents * refundPercent, 100);
         int feeCents = (refundPercent == 100)
-                ? Math.floorDiv(amountCents * asaasProperties.fullRefundFeePercentOrDefault(), 100)
+                ? asaasProperties.fullRefundFeeCentsOrDefault()
                 : 0;
-        int netCents = grossCents - feeCents;
-        if (netCents <= 0) {
+        int splitRefundCents = grossCents - feeCents;
+        if (splitRefundCents <= 0) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                    "Refund net amount is zero after fees");
+                    "Refund amount is too small to cover the platform fee");
         }
 
-        BigDecimal refundValue = fromCents(netCents);
+        BigDecimal totalRefundValue = fromCents(grossCents);
+        BigDecimal splitRefundValue = fromCents(splitRefundCents);
         AsaasRefundRequest refundRequest = new AsaasRefundRequest(
-                null,
+                totalRefundValue,
                 buildRefundDescription(refundPercent),
-                List.of(new AsaasSplitRefund(payment.getAsaasSplitId(), refundValue))
+                List.of(new AsaasSplitRefund(payment.getAsaasSplitId(), splitRefundValue))
         );
 
         AsaasPaymentResponse response = asaasClient.refundPayment(payment.getAsaasPaymentId(), refundRequest);
-        log.info("Asaas refund requested for payment {} status={} value={}",
-                payment.getAsaasPaymentId(), response.status(), refundValue);
+        log.info("Asaas refund requested for payment {} status={} customerValue={} splitValue={}",
+                payment.getAsaasPaymentId(), response.status(), totalRefundValue, splitRefundValue);
 
         payment.setStatus(Payment.STATUS_REFUND_REQUESTED);
         payment.setRefundedAt(OffsetDateTime.now(ZoneOffset.UTC));
-        payment.setRefundAmountCents(netCents);
+        payment.setRefundAmountCents(grossCents);
         paymentRepository.save(payment);
 
         return new RefundResponseDto(
@@ -277,7 +285,7 @@ public class PaymentService {
                 refundPercent,
                 grossCents,
                 feeCents,
-                netCents,
+                grossCents,
                 payment.getStatus(),
                 "Refund requested. Final settlement will be confirmed by webhook."
         );
@@ -461,7 +469,7 @@ public class PaymentService {
 
     private static String buildRefundDescription(int refundPercent) {
         return refundPercent == 100
-                ? "Full refund (10% retention applied)"
+                ? "Full refund (Asaas fee absorbed by platform)"
                 : "Partial refund (" + refundPercent + "%)";
     }
 

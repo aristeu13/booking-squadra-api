@@ -319,7 +319,7 @@ public class BookingService {
         if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
             if (hoursUntilStart >= policy.getPixFullRefundHours()) {
                 return refundOutcome(booking, 100, "pix_full_refund",
-                        "Reserva cancelada. Reembolso de 90% aplicado.");
+                        "Reserva cancelada. Reembolso integral aplicado.");
             }
             if (hoursUntilStart >= policy.getPixPartialRefundHours()) {
                 int refundPercent = policy.getPixPartialRefundPercent();
