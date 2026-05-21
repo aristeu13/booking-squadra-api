@@ -5,8 +5,10 @@ import com.bookingsquadra.config.TestOtpProperties;
 import com.bookingsquadra.dto.IdentifierChangeConfirmDto;
 import com.bookingsquadra.dto.IdentifierChangeStartResponseDto;
 import com.bookingsquadra.dto.ProfileDto;
+import com.bookingsquadra.entity.AccountMergeEvent;
 import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.UserOtp;
+import com.bookingsquadra.repository.AccountMergeEventRepository;
 import com.bookingsquadra.repository.BookingRepository;
 import com.bookingsquadra.repository.UserOtpRepository;
 import com.bookingsquadra.repository.UserRefreshTokenRepository;
@@ -40,6 +42,7 @@ public class IdentifierChangeService {
     private final UserOtpRepository userOtpRepository;
     private final UserRefreshTokenRepository userRefreshTokenRepository;
     private final BookingRepository bookingRepository;
+    private final AccountMergeEventRepository accountMergeEventRepository;
     private final OtpEmailSender otpEmailSender;
     private final OtpWhatsAppSender otpWhatsAppSender;
     private final AuthRateLimitService authRateLimitService;
@@ -52,6 +55,7 @@ public class IdentifierChangeService {
             UserOtpRepository userOtpRepository,
             UserRefreshTokenRepository userRefreshTokenRepository,
             BookingRepository bookingRepository,
+            AccountMergeEventRepository accountMergeEventRepository,
             OtpEmailSender otpEmailSender,
             OtpWhatsAppSender otpWhatsAppSender,
             AuthRateLimitService authRateLimitService,
@@ -63,6 +67,7 @@ public class IdentifierChangeService {
         this.userOtpRepository = userOtpRepository;
         this.userRefreshTokenRepository = userRefreshTokenRepository;
         this.bookingRepository = bookingRepository;
+        this.accountMergeEventRepository = accountMergeEventRepository;
         this.otpEmailSender = otpEmailSender;
         this.otpWhatsAppSender = otpWhatsAppSender;
         this.authRateLimitService = authRateLimitService;
@@ -133,7 +138,8 @@ public class IdentifierChangeService {
         otp.setUsedAt(now);
         userOtpRepository.save(otp);
 
-        other.ifPresent(secondary -> mergeInto(me, secondary, now));
+        String targetKind = isPhone ? AccountMergeEvent.TARGET_KIND_PHONE : AccountMergeEvent.TARGET_KIND_EMAIL;
+        other.ifPresent(secondary -> mergeInto(me, secondary, target, targetKind, body.mergeAcknowledged(), now));
 
         if (isPhone) {
             me.setPhoneE164(target);
@@ -212,20 +218,47 @@ public class IdentifierChangeService {
                 .filter(u -> User.STATUS_ACTIVE.equals(u.getStatus()));
     }
 
-    private void mergeInto(User primary, User secondary, OffsetDateTime now) {
+    private void mergeInto(
+            User primary,
+            User secondary,
+            String target,
+            String targetKind,
+            boolean acknowledged,
+            OffsetDateTime now
+    ) {
         log.info("Merging user {} into {}", secondary.getId(), primary.getId());
 
-        bookingRepository.reassignUserId(secondary.getId(), primary.getId());
-        userRefreshTokenRepository.revokeAllForUser(secondary.getId(), now);
+        String secondaryEmailSnapshot = secondary.getEmail();
+        String secondaryPhoneSnapshot = secondary.getPhoneE164();
+        String secondaryGoogleIdSnapshot = secondary.getGoogleId();
+        String secondaryAsaasSnapshot = secondary.getAsaasCustomerId();
 
-        if (primary.getAsaasCustomerId() == null && secondary.getAsaasCustomerId() != null) {
-            primary.setAsaasCustomerId(secondary.getAsaasCustomerId());
-        } else if (secondary.getAsaasCustomerId() != null) {
+        int bookingsMoved = bookingRepository.reassignUserId(secondary.getId(), primary.getId());
+        int refreshTokensRevoked = userRefreshTokenRepository.revokeAllForUser(secondary.getId(), now);
+
+        if (primary.getAsaasCustomerId() == null && secondaryAsaasSnapshot != null) {
+            primary.setAsaasCustomerId(secondaryAsaasSnapshot);
+        } else if (secondaryAsaasSnapshot != null) {
             log.warn("Merge {} <- {}: keeping primary Asaas customer {} and discarding secondary {} (reconcile manually)",
                     primary.getId(), secondary.getId(),
-                    primary.getAsaasCustomerId(), secondary.getAsaasCustomerId());
+                    primary.getAsaasCustomerId(), secondaryAsaasSnapshot);
         }
 
+        accountMergeEventRepository.save(AccountMergeEvent.builder()
+                .primaryUserId(primary.getId())
+                .secondaryUserId(secondary.getId())
+                .targetIdentifier(target)
+                .targetKind(targetKind)
+                .mergeAcknowledged(acknowledged)
+                .bookingsMoved(bookingsMoved)
+                .refreshTokensRevoked(refreshTokensRevoked)
+                .secondaryEmail(secondaryEmailSnapshot)
+                .secondaryPhoneE164(secondaryPhoneSnapshot)
+                .secondaryGoogleId(secondaryGoogleIdSnapshot)
+                .secondaryAsaasCustomerId(secondaryAsaasSnapshot)
+                .build());
+
+        secondary.setName("Deleted User");
         secondary.setStatus(User.STATUS_DELETED);
         secondary.setEmail(null);
         secondary.setPhoneE164(null);
