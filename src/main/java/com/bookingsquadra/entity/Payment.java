@@ -52,12 +52,6 @@ public class Payment {
     @Column(name = "asaas_customer_id", nullable = false)
     private String asaasCustomerId;
 
-    @Column(name = "asaas_split_id", nullable = false)
-    private String asaasSplitId;
-
-    @Column(name = "wallet_id", nullable = false)
-    private String walletId;
-
     @Column(name = "billing_type", nullable = false)
     private String billingType;
 

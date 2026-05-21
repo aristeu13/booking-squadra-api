@@ -9,7 +9,7 @@ import com.bookingsquadra.dto.CreateVenueDto;
 import com.bookingsquadra.dto.OperatingHoursDto;
 import com.bookingsquadra.dto.UpdateCourtDto;
 import com.bookingsquadra.dto.UpdateVenueDto;
-import com.bookingsquadra.dto.UpdateVenueWalletDto;
+import com.bookingsquadra.dto.UpdateVenuePixDto;
 import com.bookingsquadra.dto.VenueDto;
 import com.bookingsquadra.entity.Amenity;
 import com.bookingsquadra.entity.CancelPolicy;
@@ -239,10 +239,11 @@ public class AdminVenueService {
     }
 
     @Transactional
-    public VenueDto updateWallet(UUID venueId, UpdateVenueWalletDto dto) {
+    public VenueDto updatePix(UUID venueId, UpdateVenuePixDto dto) {
         Venue venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
-        venue.setAsaasWalletId(dto.asaasWalletId().trim());
+        venue.setPixKey(dto.pixKey().trim());
+        venue.setPixKeyType(dto.pixKeyType().trim());
         venueRepository.save(venue);
         return toVenueDto(venue);
     }

@@ -71,8 +71,11 @@ public class Venue {
     @Column(nullable = false)
     private Boolean active;
 
-    @Column(name = "asaas_wallet_id")
-    private String asaasWalletId;
+    @Column(name = "pix_key")
+    private String pixKey;
+
+    @Column(name = "pix_key_type")
+    private String pixKeyType;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;

@@ -9,7 +9,6 @@ public record AsaasProperties(
         Integer bookingGraceMinutes,
         Integer paymentWindowMinutes,
         Integer dueDays,
-        Integer fullRefundFeeCents,
         Integer mainAccountShareCents
 ) {
     public int bookingGraceMinutesOrDefault() {
@@ -22,10 +21,6 @@ public record AsaasProperties(
 
     public int dueDaysOrDefault() {
         return dueDays == null ? 1 : dueDays;
-    }
-
-    public int fullRefundFeeCentsOrDefault() {
-        return fullRefundFeeCents == null ? 199 : fullRefundFeeCents;
     }
 
     public int mainAccountShareCentsOrDefault() {

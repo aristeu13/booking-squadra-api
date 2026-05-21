@@ -5,14 +5,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record AsaasPaymentResponse(
+public record AsaasTransferResponse(
         String id,
-        String customer,
-        String billingType,
-        String status,
         BigDecimal value,
         BigDecimal netValue,
-        String dueDate,
-        String invoiceUrl,
+        String status,
+        String operationType,
+        String dateCreated,
         String externalReference
 ) {}

@@ -83,6 +83,15 @@ public class AsaasClient {
                 .body(AsaasPaymentResponse.class));
     }
 
+    public AsaasTransferResponse createTransfer(AsaasTransferRequest request, String idempotencyKey) {
+        return execute("POST /transfers", () -> restClient.post()
+                .uri("/transfers")
+                .header("X-Idempotency-Key", idempotencyKey)
+                .body(request)
+                .retrieve()
+                .body(AsaasTransferResponse.class));
+    }
+
     private static <T> T execute(String operation, AsaasCall<T> call) {
         try {
             return call.run();

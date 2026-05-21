@@ -16,7 +16,6 @@ import com.bookingsquadra.entity.Venue;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -156,8 +155,7 @@ public class BookingEmailPayloadMapper {
         NumberFormat nf = NumberFormat.getCurrencyInstance(PT_BR);
         nf.setMaximumFractionDigits(2);
         nf.setMinimumFractionDigits(2);
-        BigDecimal value = BigDecimal.valueOf(cents).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
-        return nf.format(value);
+        return nf.format(BigDecimal.valueOf(cents, 2));
     }
 
     public record BookingNotificationData(

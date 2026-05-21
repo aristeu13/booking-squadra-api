@@ -5,7 +5,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record AsaasRefundRequest(
+public record AsaasTransferRequest(
         BigDecimal value,
-        String description
+        String pixAddressKey,
+        String pixAddressKeyType,
+        String operationType,
+        String description,
+        String externalReference
 ) {}

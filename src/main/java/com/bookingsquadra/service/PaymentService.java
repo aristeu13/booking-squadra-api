@@ -8,9 +8,6 @@ import com.bookingsquadra.client.asaas.AsaasPaymentRequest;
 import com.bookingsquadra.client.asaas.AsaasPaymentResponse;
 import com.bookingsquadra.client.asaas.AsaasPixCodeResponse;
 import com.bookingsquadra.client.asaas.AsaasRefundRequest;
-import com.bookingsquadra.client.asaas.AsaasSplitRefund;
-import com.bookingsquadra.client.asaas.AsaasSplitRequest;
-import com.bookingsquadra.client.asaas.AsaasSplitResponse;
 import com.bookingsquadra.config.AsaasProperties;
 import com.bookingsquadra.dto.CheckoutRequestDto;
 import com.bookingsquadra.dto.CheckoutResponseDto;
@@ -37,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -127,7 +123,8 @@ public class PaymentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Court not found"));
         Venue venue = venueRepository.findById(court.getVenueId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Venue not found"));
-        if (venue.getAsaasWalletId() == null || venue.getAsaasWalletId().isBlank()) {
+        if (venue.getPixKey() == null || venue.getPixKey().isBlank()
+                || venue.getPixKeyType() == null || venue.getPixKeyType().isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Venue is not configured to accept payments yet");
         }
@@ -135,24 +132,12 @@ public class PaymentService {
         ensureUserBillingDetails(user, request);
         ensureAsaasCustomer(user);
 
-        int mainAccountShareCents = asaasProperties.mainAccountShareCentsOrDefault();
-        int venueShareCents = booking.getAmountCents() - mainAccountShareCents;
-        if (venueShareCents <= 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                    "Booking amount is too low to cover the platform share");
-        }
-
         AsaasPaymentRequest paymentRequest = new AsaasPaymentRequest(
                 user.getAsaasCustomerId(),
                 Payment.BILLING_TYPE_PIX,
                 fromCents(booking.getAmountCents()),
                 LocalDate.now(ASAAS_ZONE).plusDays(asaasProperties.dueDaysOrDefault()),
-                booking.getId().toString(),
-                List.of(new AsaasSplitRequest(
-                        venue.getAsaasWalletId(),
-                        null,
-                        fromCents(venueShareCents)
-                ))
+                booking.getId().toString()
         );
 
         String idempotencyKey = buildCheckoutIdempotencyKey(booking.getId(), Payment.BILLING_TYPE_PIX);
@@ -163,8 +148,6 @@ public class PaymentService {
             return toCheckoutResponse(booking, concurrent);
         }
 
-        AsaasSplitResponse split = firstSplitOrThrow(response);
-
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC)
                 .plusMinutes(asaasProperties.paymentWindowMinutesOrDefault());
         booking.setExpiresAt(expiresAt);
@@ -173,8 +156,6 @@ public class PaymentService {
                 .bookingId(booking.getId())
                 .asaasPaymentId(response.id())
                 .asaasCustomerId(user.getAsaasCustomerId())
-                .asaasSplitId(split.id())
-                .walletId(split.walletId())
                 .billingType(Payment.BILLING_TYPE_PIX)
                 .amountCents(booking.getAmountCents())
                 .status(Payment.STATUS_PENDING)
@@ -252,40 +233,34 @@ public class PaymentService {
         }
 
         int amountCents = payment.getAmountCents();
-        int grossCents = Math.floorDiv(amountCents * refundPercent, 100);
-        int feeCents = (refundPercent == 100)
-                ? asaasProperties.fullRefundFeeCentsOrDefault()
-                : 0;
-        int splitRefundCents = grossCents - feeCents;
-        if (splitRefundCents <= 0) {
+        int refundCents = Math.floorDiv(amountCents * refundPercent, 100);
+        if (refundCents <= 0) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                    "Refund amount is too small to cover the platform fee");
+                    "Refund amount is zero");
         }
 
-        BigDecimal totalRefundValue = fromCents(grossCents);
-        BigDecimal splitRefundValue = fromCents(splitRefundCents);
+        BigDecimal refundValue = fromCents(refundCents);
         AsaasRefundRequest refundRequest = new AsaasRefundRequest(
-                totalRefundValue,
-                buildRefundDescription(refundPercent),
-                List.of(new AsaasSplitRefund(payment.getAsaasSplitId(), splitRefundValue))
+                refundValue,
+                buildRefundDescription(refundPercent)
         );
 
         AsaasPaymentResponse response = asaasClient.refundPayment(payment.getAsaasPaymentId(), refundRequest);
-        log.info("Asaas refund requested for payment {} status={} customerValue={} splitValue={}",
-                payment.getAsaasPaymentId(), response.status(), totalRefundValue, splitRefundValue);
+        log.info("Asaas refund requested for payment {} status={} value={}",
+                payment.getAsaasPaymentId(), response.status(), refundValue);
 
         payment.setStatus(Payment.STATUS_REFUND_REQUESTED);
         payment.setRefundedAt(OffsetDateTime.now(ZoneOffset.UTC));
-        payment.setRefundAmountCents(grossCents);
+        payment.setRefundAmountCents(refundCents);
         paymentRepository.save(payment);
 
         return new RefundResponseDto(
                 booking.getId(),
                 payment.getAsaasPaymentId(),
                 refundPercent,
-                grossCents,
-                feeCents,
-                grossCents,
+                refundCents,
+                0,
+                refundCents,
                 payment.getStatus(),
                 "Refund requested. Final settlement will be confirmed by webhook."
         );
@@ -439,19 +414,6 @@ public class PaymentService {
         return OffsetDateTime.now(ZoneOffset.UTC).plus(PIX_REFRESH_MARGIN).isBefore(expiresAt);
     }
 
-    private static AsaasSplitResponse firstSplitOrThrow(AsaasPaymentResponse response) {
-        if (response == null || response.split() == null || response.split().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Asaas payment response did not contain a split");
-        }
-        AsaasSplitResponse split = response.split().get(0);
-        if (split.id() == null || split.walletId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Asaas split response missing id/walletId");
-        }
-        return split;
-    }
-
     private static CheckoutResponseDto toCheckoutResponse(Booking booking, Payment payment) {
         return new CheckoutResponseDto(
                 booking.getId(),
@@ -469,12 +431,12 @@ public class PaymentService {
 
     private static String buildRefundDescription(int refundPercent) {
         return refundPercent == 100
-                ? "Full refund (Asaas fee absorbed by platform)"
+                ? "Full refund"
                 : "Partial refund (" + refundPercent + "%)";
     }
 
     private static BigDecimal fromCents(int cents) {
-        return BigDecimal.valueOf(cents).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+        return BigDecimal.valueOf(cents, 2);
     }
 
     private static LocalDate parseDueDate(String value) {

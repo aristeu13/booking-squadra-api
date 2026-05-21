@@ -52,6 +52,7 @@ public class BookingService {
     private final UserService userService;
     private final CourtAvailabilityService courtAvailabilityService;
     private final PaymentService paymentService;
+    private final VenuePayoutService venuePayoutService;
     private final LocalPaymentEligibilityService localPaymentEligibilityService;
     private final AsaasProperties asaasProperties;
     private final BookingNotificationDataLoader bookingNotificationDataLoader;
@@ -67,6 +68,7 @@ public class BookingService {
             UserService userService,
             CourtAvailabilityService courtAvailabilityService,
             PaymentService paymentService,
+            VenuePayoutService venuePayoutService,
             LocalPaymentEligibilityService localPaymentEligibilityService,
             AsaasProperties asaasProperties,
             BookingNotificationDataLoader bookingNotificationDataLoader,
@@ -80,6 +82,7 @@ public class BookingService {
         this.userService = userService;
         this.courtAvailabilityService = courtAvailabilityService;
         this.paymentService = paymentService;
+        this.venuePayoutService = venuePayoutService;
         this.localPaymentEligibilityService = localPaymentEligibilityService;
         this.asaasProperties = asaasProperties;
         this.bookingNotificationDataLoader = bookingNotificationDataLoader;
@@ -248,6 +251,7 @@ public class BookingService {
         bookingRepository.save(booking);
 
         if (PAYMENT_METHOD_PIX.equals(booking.getPaymentMethod())) {
+            venuePayoutService.cancelForBooking(booking.getId());
             RefundResponseDto refund = paymentService.refundForCancellation(
                     booking, outcome.refundPercent());
             if (refund != null) {

@@ -38,6 +38,7 @@ public class PaymentWebhookService {
     private final BookingNotificationDataLoader bookingNotificationDataLoader;
     private final BookingEmailPayloadMapper bookingEmailPayloadMapper;
     private final TransactionalEmailService transactionalEmailService;
+    private final VenuePayoutService venuePayoutService;
 
     public PaymentWebhookService(
             BookingRepository bookingRepository,
@@ -45,7 +46,8 @@ public class PaymentWebhookService {
             ProcessedWebhookEventRepository processedWebhookEventRepository,
             BookingNotificationDataLoader bookingNotificationDataLoader,
             BookingEmailPayloadMapper bookingEmailPayloadMapper,
-            TransactionalEmailService transactionalEmailService
+            TransactionalEmailService transactionalEmailService,
+            VenuePayoutService venuePayoutService
     ) {
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
@@ -53,6 +55,7 @@ public class PaymentWebhookService {
         this.bookingNotificationDataLoader = bookingNotificationDataLoader;
         this.bookingEmailPayloadMapper = bookingEmailPayloadMapper;
         this.transactionalEmailService = transactionalEmailService;
+        this.venuePayoutService = venuePayoutService;
     }
 
     @Transactional
@@ -145,6 +148,14 @@ public class PaymentWebhookService {
             }
             if (bookingChanged) {
                 bookingRepository.save(booking);
+            }
+
+            if (BOOKING_STATUS_CONFIRMED.equals(outcome.bookingStatus)
+                    && BOOKING_STATUS_PENDING.equals(previousBookingStatus)) {
+                venuePayoutService.schedule(booking);
+            }
+            if (BOOKING_STATUS_CANCELLED.equals(outcome.bookingStatus)) {
+                venuePayoutService.cancelForBooking(booking.getId());
             }
 
             appendBookingScopedEmails(emailQueue, event, outcome, payment, previousPaymentStatus, booking, previousBookingStatus);

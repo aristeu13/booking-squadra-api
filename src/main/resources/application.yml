@@ -89,5 +89,4 @@ app:
       booking-grace-minutes: ${ASAAS_BOOKING_GRACE_MINUTES:3}
       payment-window-minutes: ${ASAAS_PAYMENT_WINDOW_MINUTES:10}
       due-days: ${ASAAS_DUE_DAYS:1}
-      full-refund-fee-cents: ${ASAAS_FULL_REFUND_FEE_CENTS:199}
       main-account-share-cents: ${ASAAS_MAIN_ACCOUNT_SHARE_CENTS:100}
