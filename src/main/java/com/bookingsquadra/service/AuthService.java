@@ -1,8 +1,11 @@
 package com.bookingsquadra.service;
 
 import com.bookingsquadra.config.JwtProperties;
+import com.bookingsquadra.config.PhoneAuthProperties;
 import com.bookingsquadra.config.TestOtpProperties;
 import com.bookingsquadra.dto.AuthTokenDto;
+import com.bookingsquadra.dto.OtpRequestDto;
+import com.bookingsquadra.dto.OtpVerifyDto;
 import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.UserOtp;
 import com.bookingsquadra.entity.UserRefreshToken;
@@ -10,6 +13,7 @@ import com.bookingsquadra.repository.UserOtpRepository;
 import com.bookingsquadra.repository.UserRefreshTokenRepository;
 import com.bookingsquadra.repository.UserRepository;
 import com.bookingsquadra.security.JwtUtil;
+import com.bookingsquadra.util.BrazilPhoneNormalizer;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,12 +35,13 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class AuthService {
 
     private static final int OTP_TTL_MINUTES = 10;
-    private static final int OTP_EMAIL_COOLDOWN_SECONDS = 60;
+    private static final int OTP_RESEND_COOLDOWN_SECONDS = 60;
     private static final int REFRESH_TOKEN_BYTES = 32;
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -46,8 +51,10 @@ public class AuthService {
     private final UserOtpRepository userOtpRepository;
     private final UserRefreshTokenRepository userRefreshTokenRepository;
     private final OtpEmailSender otpEmailSender;
+    private final OtpWhatsAppSender otpWhatsAppSender;
     private final AuthRateLimitService authRateLimitService;
     private final TestOtpProperties testOtpProperties;
+    private final PhoneAuthProperties phoneAuthProperties;
     private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     public AuthService(
@@ -57,8 +64,10 @@ public class AuthService {
             UserOtpRepository userOtpRepository,
             UserRefreshTokenRepository userRefreshTokenRepository,
             OtpEmailSender otpEmailSender,
+            OtpWhatsAppSender otpWhatsAppSender,
             AuthRateLimitService authRateLimitService,
             TestOtpProperties testOtpProperties,
+            PhoneAuthProperties phoneAuthProperties,
             GoogleIdTokenVerifier googleIdTokenVerifier
     ) {
         this.jwtUtil = jwtUtil;
@@ -67,14 +76,32 @@ public class AuthService {
         this.userOtpRepository = userOtpRepository;
         this.userRefreshTokenRepository = userRefreshTokenRepository;
         this.otpEmailSender = otpEmailSender;
+        this.otpWhatsAppSender = otpWhatsAppSender;
         this.authRateLimitService = authRateLimitService;
         this.testOtpProperties = testOtpProperties;
+        this.phoneAuthProperties = phoneAuthProperties;
         this.googleIdTokenVerifier = googleIdTokenVerifier;
     }
 
     @Transactional
-    public void requestOtp(String email, HttpServletRequest request) {
-        String normalizedEmail = normalizeEmail(email);
+    public void requestOtp(OtpRequestDto body, HttpServletRequest request) {
+        if (hasText(body.email())) {
+            requestEmailOtp(body.email(), request);
+        } else {
+            requestPhoneOtp(body.phone(), request);
+        }
+    }
+
+    @Transactional
+    public AuthTokenDto verifyOtp(OtpVerifyDto body, HttpServletRequest request) {
+        if (hasText(body.email())) {
+            return verifyEmailOtp(body.email(), body.code(), request);
+        }
+        return verifyPhoneOtp(body.phone(), body.code(), request);
+    }
+
+    private void requestEmailOtp(String rawEmail, HttpServletRequest request) {
+        String normalizedEmail = normalizeEmail(rawEmail);
         InetAddress clientIp = resolveClientIp(request);
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -100,19 +127,47 @@ public class AuthService {
         authRateLimitService.checkAndRecordOtpRequest(normalizedEmail, clientIp, now);
 
         String code = generateCode();
-        userOtpRepository.save(UserOtp.builder()
-                .userId(user.getId())
-                .otpCode(code)
-                .purpose(UserOtp.PURPOSE_LOGIN)
-                .expiresAt(now.plusMinutes(OTP_TTL_MINUTES))
-                .build());
-
+        persistLoginOtp(user.getId(), code, now);
         otpEmailSender.sendLoginOtp(normalizedEmail, code);
     }
 
-    @Transactional
-    public AuthTokenDto verifyOtp(String email, String code, HttpServletRequest request) {
-        String normalizedEmail = normalizeEmail(email);
+    private void requestPhoneOtp(String rawPhone, HttpServletRequest request) {
+        if (!phoneAuthProperties.enabled()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Phone login is not enabled");
+        }
+
+        String e164 = BrazilPhoneNormalizer.normalizeOrThrow(rawPhone);
+        InetAddress clientIp = resolveClientIp(request);
+        OffsetDateTime now = OffsetDateTime.now();
+
+        authRateLimitService.checkOtpRequestIpAllowed(clientIp, now);
+
+        User user = userRepository.findFirstByPhoneE164(e164)
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .name("")
+                        .phoneE164(e164)
+                        .hasUsedGoogleAuth(false)
+                        .role(User.ROLE_USER)
+                        .status(User.STATUS_ACTIVE)
+                        .build()));
+
+        if (testOtpProperties.matchesPhone(e164)) {
+            return;
+        }
+
+        if (hasRecentLoginOtp(user.getId(), now)) {
+            return;
+        }
+
+        authRateLimitService.checkAndRecordOtpRequest(e164, clientIp, now);
+
+        String code = generateCode();
+        persistLoginOtp(user.getId(), code, now);
+        otpWhatsAppSender.sendLoginOtp(e164, code);
+    }
+
+    private AuthTokenDto verifyEmailOtp(String rawEmail, String code, HttpServletRequest request) {
+        String normalizedEmail = normalizeEmail(rawEmail);
         InetAddress clientIp = resolveClientIp(request);
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -128,13 +183,47 @@ public class AuthService {
             throw invalidOtp(normalizedEmail, clientIp, now, "Invalid or expired OTP");
         }
 
+        return consumeOtpAndIssueTokens(user, code, normalizedEmail, clientIp, now);
+    }
+
+    private AuthTokenDto verifyPhoneOtp(String rawPhone, String code, HttpServletRequest request) {
+        if (!phoneAuthProperties.enabled()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Phone login is not enabled");
+        }
+
+        String e164 = BrazilPhoneNormalizer.normalizeOrThrow(rawPhone);
+        InetAddress clientIp = resolveClientIp(request);
+        OffsetDateTime now = OffsetDateTime.now();
+
+        authRateLimitService.checkOtpVerifyAllowed(e164, clientIp, now);
+
+        User user = userRepository.findFirstByPhoneE164(e164)
+                .orElseThrow(() -> invalidOtp(e164, clientIp, now, "Invalid credentials"));
+
+        if (testOtpProperties.matchesPhone(e164)) {
+            if (testOtpProperties.matchesCode(code)) {
+                return issueTokenPair(user, now);
+            }
+            throw invalidOtp(e164, clientIp, now, "Invalid or expired OTP");
+        }
+
+        return consumeOtpAndIssueTokens(user, code, e164, clientIp, now);
+    }
+
+    private AuthTokenDto consumeOtpAndIssueTokens(
+            User user,
+            String code,
+            String identifier,
+            InetAddress clientIp,
+            OffsetDateTime now
+    ) {
         UserOtp otp = userOtpRepository
                 .findFirstByUserIdAndPurposeAndOtpCodeAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(
                         user.getId(),
                         UserOtp.PURPOSE_LOGIN,
                         code,
                         now)
-                .orElseThrow(() -> invalidOtp(normalizedEmail, clientIp, now, "Invalid or expired OTP"));
+                .orElseThrow(() -> invalidOtp(identifier, clientIp, now, "Invalid or expired OTP"));
 
         otp.setUsedAt(now);
         userOtpRepository.save(otp);
@@ -196,6 +285,15 @@ public class AuthService {
                 jwtUtil.generateToken(user.getId().toString(), user.getRole()),
                 refreshToken
         );
+    }
+
+    private void persistLoginOtp(UUID userId, String code, OffsetDateTime now) {
+        userOtpRepository.save(UserOtp.builder()
+                .userId(userId)
+                .otpCode(code)
+                .purpose(UserOtp.PURPOSE_LOGIN)
+                .expiresAt(now.plusMinutes(OTP_TTL_MINUTES))
+                .build());
     }
 
     private GoogleIdToken.Payload verifyGooglePayload(String idToken) {
@@ -277,22 +375,22 @@ public class AuthService {
         }
     }
 
-    private boolean hasRecentLoginOtp(java.util.UUID userId, OffsetDateTime now) {
+    private boolean hasRecentLoginOtp(UUID userId, OffsetDateTime now) {
         return userOtpRepository.existsByUserIdAndPurposeAndUsedAtIsNullAndExpiresAtAfterAndCreatedAtAfter(
                 userId,
                 UserOtp.PURPOSE_LOGIN,
                 now,
-                now.minusSeconds(OTP_EMAIL_COOLDOWN_SECONDS)
+                now.minusSeconds(OTP_RESEND_COOLDOWN_SECONDS)
         );
     }
 
     private ResponseStatusException invalidOtp(
-            String normalizedEmail,
+            String identifier,
             InetAddress clientIp,
             OffsetDateTime now,
             String message
     ) {
-        authRateLimitService.recordOtpVerifyFailure(normalizedEmail, clientIp, now);
+        authRateLimitService.recordOtpVerifyFailure(identifier, clientIp, now);
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
     }
 

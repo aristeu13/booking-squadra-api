@@ -13,13 +13,13 @@ import java.time.OffsetDateTime;
 @Service
 public class AuthRateLimitService {
 
-    private static final int OTP_REQUESTS_PER_EMAIL_PER_MINUTE = 1;
-    private static final int OTP_REQUESTS_PER_EMAIL_PER_HOUR = 5;
-    private static final int OTP_REQUESTS_PER_EMAIL_PER_DAY = 10;
+    private static final int OTP_REQUESTS_PER_IDENTIFIER_PER_MINUTE = 1;
+    private static final int OTP_REQUESTS_PER_IDENTIFIER_PER_HOUR = 5;
+    private static final int OTP_REQUESTS_PER_IDENTIFIER_PER_DAY = 10;
     private static final int OTP_REQUESTS_PER_IP_PER_MINUTE = 10;
     private static final int OTP_REQUESTS_PER_IP_PER_HOUR = 50;
-    private static final int OTP_REQUESTS_PER_EMAIL_IP_PER_TEN_MINUTES = 3;
-    private static final int OTP_VERIFY_FAILURES_PER_EMAIL_IP_PER_TEN_MINUTES = 5;
+    private static final int OTP_REQUESTS_PER_IDENTIFIER_IP_PER_TEN_MINUTES = 3;
+    private static final int OTP_VERIFY_FAILURES_PER_IDENTIFIER_IP_PER_TEN_MINUTES = 5;
     private static final int EVENT_RETENTION_HOURS = 48;
 
     private static final String GENERIC_RATE_LIMIT_MESSAGE = "Too many requests. Please try again later.";
@@ -31,31 +31,31 @@ public class AuthRateLimitService {
     }
 
     @Transactional
-    public void checkAndRecordOtpRequest(String normalizedEmail, InetAddress clientIp, OffsetDateTime now) {
+    public void checkAndRecordOtpRequest(String identifier, InetAddress clientIp, OffsetDateTime now) {
         cleanupOldEvents(now);
 
-        assertBelowLimit(repository.countByActionAndEmailAndCreatedAtAfter(
-                        AuthRateLimitEvent.ACTION_OTP_REQUEST, normalizedEmail, now.minusMinutes(1)),
-                OTP_REQUESTS_PER_EMAIL_PER_MINUTE);
-        assertBelowLimit(repository.countByActionAndEmailAndCreatedAtAfter(
-                        AuthRateLimitEvent.ACTION_OTP_REQUEST, normalizedEmail, now.minusHours(1)),
-                OTP_REQUESTS_PER_EMAIL_PER_HOUR);
-        assertBelowLimit(repository.countByActionAndEmailAndCreatedAtAfter(
-                        AuthRateLimitEvent.ACTION_OTP_REQUEST, normalizedEmail, now.minusDays(1)),
-                OTP_REQUESTS_PER_EMAIL_PER_DAY);
+        assertBelowLimit(repository.countByActionAndIdentifierAndCreatedAtAfter(
+                        AuthRateLimitEvent.ACTION_OTP_REQUEST, identifier, now.minusMinutes(1)),
+                OTP_REQUESTS_PER_IDENTIFIER_PER_MINUTE);
+        assertBelowLimit(repository.countByActionAndIdentifierAndCreatedAtAfter(
+                        AuthRateLimitEvent.ACTION_OTP_REQUEST, identifier, now.minusHours(1)),
+                OTP_REQUESTS_PER_IDENTIFIER_PER_HOUR);
+        assertBelowLimit(repository.countByActionAndIdentifierAndCreatedAtAfter(
+                        AuthRateLimitEvent.ACTION_OTP_REQUEST, identifier, now.minusDays(1)),
+                OTP_REQUESTS_PER_IDENTIFIER_PER_DAY);
         assertBelowLimit(repository.countByActionAndIpAddressAndCreatedAtAfter(
                         AuthRateLimitEvent.ACTION_OTP_REQUEST, clientIp, now.minusMinutes(1)),
                 OTP_REQUESTS_PER_IP_PER_MINUTE);
         assertBelowLimit(repository.countByActionAndIpAddressAndCreatedAtAfter(
                         AuthRateLimitEvent.ACTION_OTP_REQUEST, clientIp, now.minusHours(1)),
                 OTP_REQUESTS_PER_IP_PER_HOUR);
-        assertBelowLimit(repository.countByActionAndEmailAndIpAddressAndCreatedAtAfter(
-                        AuthRateLimitEvent.ACTION_OTP_REQUEST, normalizedEmail, clientIp, now.minusMinutes(10)),
-                OTP_REQUESTS_PER_EMAIL_IP_PER_TEN_MINUTES);
+        assertBelowLimit(repository.countByActionAndIdentifierAndIpAddressAndCreatedAtAfter(
+                        AuthRateLimitEvent.ACTION_OTP_REQUEST, identifier, clientIp, now.minusMinutes(10)),
+                OTP_REQUESTS_PER_IDENTIFIER_IP_PER_TEN_MINUTES);
 
         repository.save(AuthRateLimitEvent.builder()
                 .action(AuthRateLimitEvent.ACTION_OTP_REQUEST)
-                .email(normalizedEmail)
+                .identifier(identifier)
                 .ipAddress(clientIp)
                 .build());
     }
@@ -71,18 +71,18 @@ public class AuthRateLimitService {
     }
 
     @Transactional(readOnly = true)
-    public void checkOtpVerifyAllowed(String normalizedEmail, InetAddress clientIp, OffsetDateTime now) {
-        assertBelowLimit(repository.countByActionAndEmailAndIpAddressAndCreatedAtAfter(
-                        AuthRateLimitEvent.ACTION_OTP_VERIFY_FAILED, normalizedEmail, clientIp, now.minusMinutes(10)),
-                OTP_VERIFY_FAILURES_PER_EMAIL_IP_PER_TEN_MINUTES);
+    public void checkOtpVerifyAllowed(String identifier, InetAddress clientIp, OffsetDateTime now) {
+        assertBelowLimit(repository.countByActionAndIdentifierAndIpAddressAndCreatedAtAfter(
+                        AuthRateLimitEvent.ACTION_OTP_VERIFY_FAILED, identifier, clientIp, now.minusMinutes(10)),
+                OTP_VERIFY_FAILURES_PER_IDENTIFIER_IP_PER_TEN_MINUTES);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordOtpVerifyFailure(String normalizedEmail, InetAddress clientIp, OffsetDateTime now) {
+    public void recordOtpVerifyFailure(String identifier, InetAddress clientIp, OffsetDateTime now) {
         cleanupOldEvents(now);
         repository.save(AuthRateLimitEvent.builder()
                 .action(AuthRateLimitEvent.ACTION_OTP_VERIFY_FAILED)
-                .email(normalizedEmail)
+                .identifier(identifier)
                 .ipAddress(clientIp)
                 .build());
     }

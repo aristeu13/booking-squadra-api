@@ -6,11 +6,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TestOtpProperties(
         boolean enabled,
         String email,
+        String phone,
         String code
 ) {
 
     public boolean matchesEmail(String candidate) {
         return enabled && hasText(email) && email.equalsIgnoreCase(candidate);
+    }
+
+    public boolean matchesPhone(String candidate) {
+        return enabled && hasText(phone) && phone.equals(candidate);
     }
 
     public boolean matchesCode(String candidate) {

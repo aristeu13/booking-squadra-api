@@ -28,14 +28,14 @@ public class AuthController {
     @PostMapping("/otp/request")
     @SecurityRequirements
     public ResponseEntity<Void> requestOtp(@Valid @RequestBody OtpRequestDto body, HttpServletRequest request) {
-        authService.requestOtp(body.email(), request);
+        authService.requestOtp(body, request);
         return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/otp/verify")
     @SecurityRequirements
     public ResponseEntity<AuthTokenDto> verifyOtp(@Valid @RequestBody OtpVerifyDto body, HttpServletRequest request) {
-        return ResponseEntity.ok(authService.verifyOtp(body.email(), body.code(), request));
+        return ResponseEntity.ok(authService.verifyOtp(body, request));
     }
 
     @PostMapping("/google")

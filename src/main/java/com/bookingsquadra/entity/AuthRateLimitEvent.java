@@ -38,7 +38,8 @@ public class AuthRateLimitEvent {
     @Column(nullable = false)
     private String action;
 
-    private String email;
+    @Column(name = "email")
+    private String identifier;
 
     @JdbcTypeCode(SqlTypes.INET)
     @Column(name = "ip_address", nullable = false, columnDefinition = "inet")

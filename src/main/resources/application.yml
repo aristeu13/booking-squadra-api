@@ -61,9 +61,18 @@ app:
     test-otp:
       enabled: ${TEST_OTP_ENABLED:true}
       email: ${TEST_OTP_EMAIL:test@example.com}
+      phone: ${TEST_OTP_PHONE:+5511999999999}
       code: ${TEST_OTP_CODE:123456}
     google:
       client-id: ${GOOGLE_CLIENT_ID}
+    phone-login:
+      enabled: ${PHONE_LOGIN_ENABLED:false}
+  whatsapp:
+    base-url: ${WHATSAPP_BASE_URL:https://graph.facebook.com/v18.0}
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:}
+    otp-template-name: ${WHATSAPP_OTP_TEMPLATE_NAME:}
+    otp-template-language: ${WHATSAPP_OTP_TEMPLATE_LANGUAGE:pt_BR}
   security:
     jwt:
       secret: ${JWT_SECRET}

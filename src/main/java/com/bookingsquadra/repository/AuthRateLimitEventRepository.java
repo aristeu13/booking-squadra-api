@@ -9,13 +9,13 @@ import java.util.UUID;
 
 public interface AuthRateLimitEventRepository extends JpaRepository<AuthRateLimitEvent, UUID> {
 
-    long countByActionAndEmailAndCreatedAtAfter(String action, String email, OffsetDateTime createdAt);
+    long countByActionAndIdentifierAndCreatedAtAfter(String action, String identifier, OffsetDateTime createdAt);
 
     long countByActionAndIpAddressAndCreatedAtAfter(String action, InetAddress ipAddress, OffsetDateTime createdAt);
 
-    long countByActionAndEmailAndIpAddressAndCreatedAtAfter(
+    long countByActionAndIdentifierAndIpAddressAndCreatedAtAfter(
             String action,
-            String email,
+            String identifier,
             InetAddress ipAddress,
             OffsetDateTime createdAt
     );

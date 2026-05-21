@@ -39,10 +39,13 @@ public class User {
     @Column(nullable = false)
     private String name;
 
-    @Column(unique = true)
+    @Column
     private String email;
 
     private String phone;
+
+    @Column(name = "phone_e164")
+    private String phoneE164;
 
     @Column(name = "google_id", unique = true)
     private String googleId;
