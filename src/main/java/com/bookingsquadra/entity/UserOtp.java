@@ -27,6 +27,8 @@ public class UserOtp {
     public static final String PURPOSE_LOGIN = "login";
     public static final String PURPOSE_EMAIL_VERIFICATION = "email_verification";
     public static final String PURPOSE_DELETE_ACCOUNT = "delete_account";
+    public static final String PURPOSE_PHONE_CHANGE = "phone_change";
+    public static final String PURPOSE_EMAIL_CHANGE = "email_change";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -47,6 +49,9 @@ public class UserOtp {
 
     @Column(name = "used_at")
     private OffsetDateTime usedAt;
+
+    @Column(name = "target_identifier")
+    private String targetIdentifier;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;

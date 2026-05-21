@@ -42,8 +42,6 @@ public class User {
     @Column
     private String email;
 
-    private String phone;
-
     @Column(name = "phone_e164")
     private String phoneE164;
 

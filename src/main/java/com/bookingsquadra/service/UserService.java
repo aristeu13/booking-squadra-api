@@ -6,7 +6,6 @@ import com.bookingsquadra.entity.User;
 import com.bookingsquadra.entity.UserOtp;
 import com.bookingsquadra.repository.UserOtpRepository;
 import com.bookingsquadra.repository.UserRepository;
-import com.bookingsquadra.util.BrazilPhoneNormalizer;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -49,11 +48,6 @@ public class UserService {
         if (body.name() != null) {
             user.setName(body.name());
         }
-        if (body.phone() != null) {
-            user.setPhone(body.phone().isBlank()
-                    ? null
-                    : BrazilPhoneNormalizer.normalizeOrThrow(body.phone()));
-        }
         if (body.cpf() != null) {
             user.setCpf(normalizeCpf(body.cpf()));
         }
@@ -90,7 +84,7 @@ public class UserService {
 
         user.setName("Deleted User");
         user.setEmail("deleted-" + user.getId() + "@deleted.invalid");
-        user.setPhone(null);
+        user.setPhoneE164(null);
         user.setGoogleId(null);
         user.setCpf(null);
         user.setHasUsedGoogleAuth(false);
@@ -120,7 +114,7 @@ public class UserService {
     }
 
     private static ProfileDto toDto(User u) {
-        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhone(), u.getCpf(), u.getHasUsedGoogleAuth(), u.getRole());
+        return new ProfileDto(u.getId(), u.getName(), u.getEmail(), u.getPhoneE164(), u.getCpf(), u.getHasUsedGoogleAuth(), u.getRole());
     }
 
     private static String normalizeCpf(String cpf) {

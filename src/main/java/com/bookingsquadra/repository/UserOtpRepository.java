@@ -16,6 +16,12 @@ public interface UserOtpRepository extends JpaRepository<UserOtp, UUID> {
             OffsetDateTime now
     );
 
+    Optional<UserOtp> findFirstByUserIdAndPurposeAndUsedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(
+            UUID userId,
+            String purpose,
+            OffsetDateTime now
+    );
+
     boolean existsByUserIdAndPurposeAndUsedAtIsNullAndExpiresAtAfterAndCreatedAtAfter(
             UUID userId,
             String purpose,
