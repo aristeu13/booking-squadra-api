@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/legal/**").permitAll()
                         .requestMatchers("/api/v1/payments-webhook/**").permitAll()
+                        .requestMatchers("/api/v1/efipay-webhook/**").permitAll()
                         .requestMatchers(
                                 "/api-docs",
                                 "/api-docs/**",

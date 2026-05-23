@@ -15,6 +15,11 @@ services:
       - nginx_vhost:/etc/nginx/vhost.d
       - nginx_html:/usr/share/nginx/html
       - /var/run/docker.sock:/tmp/docker.sock:ro
+
+      - ./nginx/certs/certificate-chain-prod.crt:/etc/nginx/certs/efipay-prod-ca.crt:ro
+      - ./nginx/certs/certificate-chain-homolog.crt:/etc/nginx/certs/efipay-homolog-ca.crt:ro
+
+      - ./nginx/vhost.d/squadra.conf:/etc/nginx/vhost.d/${API_DOMAIN}:ro
     networks:
       - proxy
     deploy:
