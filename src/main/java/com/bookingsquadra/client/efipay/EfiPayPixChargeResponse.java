@@ -18,6 +18,15 @@ public record EfiPayPixChargeResponse(
         String pixCopiaECola
 ) {
 
+    /** Charge generated and awaiting payment. Initial state for a fresh charge. */
+    public static final String STATUS_ATIVA = "ATIVA";
+    /** Charge was paid by the customer (terminal). */
+    public static final String STATUS_CONCLUIDA = "CONCLUIDA";
+    /** Charge was cancelled by us, the receiver (terminal). */
+    public static final String STATUS_REMOVIDA_PELO_USUARIO_RECEBEDOR = "REMOVIDA_PELO_USUARIO_RECEBEDOR";
+    /** Charge was cancelled by EfiPay/the PSP, not by us (terminal). */
+    public static final String STATUS_REMOVIDA_PELO_PSP = "REMOVIDA_PELO_PSP";
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Calendario(Instant criacao, Integer expiracao) {
     }

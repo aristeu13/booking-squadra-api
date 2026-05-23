@@ -69,12 +69,14 @@ public class EfiPayWebhookController {
      * array carries the refund leg(s); we route on the first.
      */
     private void handleRefundSent(JsonNode event) {
+        String endToEndId = event.path("endToEndId").asText(null);
         String txid = event.path("txid").asText(null);
         JsonNode firstRefund = event.path("devolucoes").path(0);
         String refundId = firstRefund.path("id").asText(null);
         String refundStatus = firstRefund.path("status").asText(null);
 
-        log.info("EfiPay refund event: txid={} refundId={} status={}", txid, refundId, refundStatus);
+        log.info("EfiPay refund event: endToEndId={} txid={} refundId={} status={}",
+                endToEndId, txid, refundId, refundStatus);
         // TODO: look up the booking/payment by txid and transition the booking to "refunded"
         //  (and the payment row to the matching refund status). Make this idempotent — EfiPay
         //  may redeliver the same devolucao.id.
@@ -85,10 +87,12 @@ public class EfiPayWebhookController {
      * by {@code gnExtras.idEnvio} or by {@code tipo = "SOLICITACAO"}.
      */
     private void handlePixSent(JsonNode event) {
+        String endToEndId = event.path("endToEndId").asText(null);
         String idEnvio = event.path("gnExtras").path("idEnvio").asText(null);
         String status = event.path("status").asText(null);
 
-        log.info("EfiPay payout event: idEnvio={} status={}", idEnvio, status);
+        log.info("EfiPay payout event: endToEndId={} idEnvio={} status={}",
+                endToEndId, idEnvio, status);
         // TODO: look up the VenuePayout by idEnvio and mark it as completed (or failed,
         //  depending on status). Idempotency: the same idEnvio may be redelivered.
     }
@@ -100,6 +104,7 @@ public class EfiPayWebhookController {
      * {@code gnExtras.pagador} with the payer's CPF/CNPJ when EfiPay has it.
      */
     private void handlePixReceived(JsonNode event) {
+        String endToEndId = event.path("endToEndId").asText(null);
         String txid = event.path("txid").asText(null);
         String valor = event.path("valor").asText(null);
         JsonNode pagador = event.path("gnExtras").path("pagador");
@@ -108,8 +113,8 @@ public class EfiPayWebhookController {
                 ? pagador.path("cpf").asText(null)
                 : pagador.path("cnpj").asText(null);
 
-        log.info("EfiPay PIX received: txid={} valor={} payerName={} payerDoc={}",
-                txid, valor, payerName, payerDoc);
+        log.info("EfiPay PIX received: endToEndId={} txid={} valor={} payerName={} payerDoc={}",
+                endToEndId, txid, valor, payerName, payerDoc);
         // TODO: look up the booking by txid and transition it to "confirmed"; persist the
         //  paid amount on the payment row. If gnExtras.pagador is present, optionally store
         //  the payer name + masked CPF/CNPJ for the receipt. Idempotency: same txid may be

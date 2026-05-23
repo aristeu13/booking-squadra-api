@@ -15,21 +15,24 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * EfiPay PIX API client. Currently exposes immediate-charge creation
- * ({@code PUT /v2/cob/{txid}}). All requests carry the Bearer token issued by
- * {@link EfiPayTokenService}; mTLS is enforced by the underlying
- * {@code efiPayRestClient}.
+ * EfiPay PIX API client. Exposes immediate-charge creation ({@code PUT /v2/cob/{txid}}),
+ * partial/full refund requests ({@code PUT /v2/pix/{e2eId}/devolucao/{id}}), PIX lookup
+ * ({@code GET /v2/pix/{e2eId}}), and refund lookup
+ * ({@code GET /v2/pix/{e2eId}/devolucao/{id}}). All requests carry the Bearer token issued
+ * by {@link EfiPayTokenService}; mTLS is enforced by the underlying {@code efiPayRestClient}.
  *
- * <p>Idempotency note: PIX uses the {@code txid} in the URL as the idempotency token by
- * design (BCB spec). EfiPay returns 409 {@code txid_duplicado} on collision rather than
- * replaying the original charge — callers must either retry with a fresh txid or fall back
- * to {@code GET /v2/cob/{txid}} to read the existing one.
+ * <p>Idempotency note: PIX uses the path identifiers ({@code txid}, {@code refundId}) as
+ * the idempotency token by design (BCB spec). EfiPay returns 409 on collision rather than
+ * replaying the original operation — callers either retry with a fresh id or read the
+ * existing resource via the corresponding GET endpoint.
  */
 @Component
 public class EfiPayPixClient {
 
     private static final Logger log = LoggerFactory.getLogger(EfiPayPixClient.class);
     private static final Pattern TXID_PATTERN = Pattern.compile("^[a-zA-Z0-9]{26,35}$");
+    private static final Pattern E2EID_PATTERN = Pattern.compile("^[a-zA-Z0-9]{32}$");
+    private static final Pattern REFUND_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9]{1,35}$");
 
     private final RestClient restClient;
     private final EfiPayTokenService tokenService;
@@ -51,9 +54,6 @@ public class EfiPayPixClient {
      * {@code txid}. The txid must match {@code ^[a-zA-Z0-9]{26,35}$} — validated client-side to
      * fail fast instead of paying for the mTLS round-trip on a malformed value.
      *
-     * <p>If EfiPay rejects the call with 401, the cached access token is invalidated and the
-     * request is retried once with a fresh token; a second 401 propagates as 502.
-     *
      * @throws IllegalArgumentException when {@code txid} does not match the EfiPay contract,
      *         or when the configured PIX key is missing.
      * @throws EfiPayTxidDuplicadoException when EfiPay returns 409 {@code txid_duplicado}.
@@ -68,30 +68,125 @@ public class EfiPayPixClient {
             throw new IllegalArgumentException(
                     "app.payments.efipay.pix-key is not configured (EFIPAY_PIX_KEY)");
         }
-        WirePayload payload = WirePayload.from(request, properties.pixKey());
-        try {
-            return putCharge(txid, payload);
-        } catch (RestClientResponseException e) {
-            if (e.getStatusCode().value() == HttpStatus.UNAUTHORIZED.value()) {
-                log.info("EfiPay PUT /v2/cob/{} returned 401 — invalidating cached token and retrying once", txid);
-                tokenService.invalidate();
-                try {
-                    return putCharge(txid, payload);
-                } catch (RestClientResponseException retryFailure) {
-                    throw mapResponseFailure(txid, retryFailure);
-                } catch (RuntimeException retryFailure) {
-                    return rethrowUnexpected(txid, retryFailure);
-                }
-            }
-            throw mapResponseFailure(txid, e);
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            return rethrowUnexpected(txid, e);
-        }
+        ChargeWirePayload payload = ChargeWirePayload.from(request, properties.pixKey());
+        String operation = "PUT /v2/cob/" + txid;
+        return executeWithTokenRetry(operation,
+                () -> putCharge(txid, payload),
+                (op, e) -> mapChargeFailure(op, txid, e));
     }
 
-    private EfiPayPixChargeResponse putCharge(String txid, WirePayload payload) {
+    /**
+     * Initiates a refund (devolução) for a previously received PIX. The amount may be partial
+     * (sum across all devoluções of the same e2eId must stay ≤ the original valor).
+     *
+     * <p>The {@code refundId} is a caller-supplied idempotency key — submitting the same id
+     * twice produces {@link EfiPayDevolucaoDuplicadoException}. The {@code e2eId} must be the
+     * canonical {@code endToEndId} captured from the original payment's webhook.
+     *
+     * @throws IllegalArgumentException when either identifier fails its regex check.
+     * @throws EfiPayPixNaoEncontradoException when EfiPay returns 400 {@code pix_nao_encontrado}.
+     * @throws EfiPayDevolucaoDuplicadoException when EfiPay returns 409 {@code devolucao_id_duplicado}.
+     * @throws ResponseStatusException with 502 BAD_GATEWAY for any other upstream failure.
+     */
+    public EfiPayPixRefundResponse requestRefund(String e2eId,
+                                                 String refundId,
+                                                 EfiPayPixRefundRequest request) {
+        if (e2eId == null || !E2EID_PATTERN.matcher(e2eId).matches()) {
+            throw new IllegalArgumentException(
+                    "EfiPay e2eId must match ^[a-zA-Z0-9]{32}$ (got: " + e2eId + ")");
+        }
+        if (refundId == null || !REFUND_ID_PATTERN.matcher(refundId).matches()) {
+            throw new IllegalArgumentException(
+                    "EfiPay refundId must match ^[a-zA-Z0-9]{1,35}$ (got: " + refundId + ")");
+        }
+        String operation = "PUT /v2/pix/" + e2eId + "/devolucao/" + refundId;
+        return executeWithTokenRetry(operation,
+                () -> putRefund(e2eId, refundId, request),
+                (op, e) -> mapRefundFailure(op, e2eId, refundId, e));
+    }
+
+    /**
+     * Looks up the original PIX plus its devoluções by {@code endToEndId}. When
+     * {@code exibirCodigoBanco} is true, EfiPay includes {@code pagador.contaBanco.codigoBanco}
+     * in the response (otherwise that block is omitted).
+     *
+     * @throws IllegalArgumentException when {@code e2eId} does not match the EfiPay contract.
+     * @throws EfiPayPixNaoEncontradoException when EfiPay returns 400 {@code pix_nao_encontrado}.
+     * @throws ResponseStatusException with 502 BAD_GATEWAY for any other upstream failure.
+     */
+    public EfiPayPixDetailsResponse getPix(String e2eId, boolean exibirCodigoBanco) {
+        if (e2eId == null || !E2EID_PATTERN.matcher(e2eId).matches()) {
+            throw new IllegalArgumentException(
+                    "EfiPay e2eId must match ^[a-zA-Z0-9]{32}$ (got: " + e2eId + ")");
+        }
+        String operation = "GET /v2/pix/" + e2eId;
+        return executeWithTokenRetry(operation,
+                () -> fetchPix(e2eId, exibirCodigoBanco),
+                (op, e) -> mapPixLookupFailure(op, e2eId, e));
+    }
+
+    /**
+     * Looks up a single devolução by {@code (e2eId, refundId)}. Useful for polling a refund
+     * that was created via {@link #requestRefund} until it reaches a terminal state
+     * ({@code DEVOLVIDO} or {@code NAO_REALIZADO}) when the webhook hasn't arrived yet.
+     *
+     * @throws IllegalArgumentException when either identifier fails its regex check.
+     * @throws EfiPayPixNaoEncontradoException when EfiPay returns 400 {@code pix_nao_encontrado}.
+     * @throws EfiPayDevolucaoNaoEncontradaException when EfiPay returns 400 {@code devolucao_nao_encontrada}.
+     * @throws ResponseStatusException with 502 BAD_GATEWAY for any other upstream failure.
+     */
+    public EfiPayPixRefundResponse getRefund(String e2eId, String refundId) {
+        if (e2eId == null || !E2EID_PATTERN.matcher(e2eId).matches()) {
+            throw new IllegalArgumentException(
+                    "EfiPay e2eId must match ^[a-zA-Z0-9]{32}$ (got: " + e2eId + ")");
+        }
+        if (refundId == null || !REFUND_ID_PATTERN.matcher(refundId).matches()) {
+            throw new IllegalArgumentException(
+                    "EfiPay refundId must match ^[a-zA-Z0-9]{1,35}$ (got: " + refundId + ")");
+        }
+        String operation = "GET /v2/pix/" + e2eId + "/devolucao/" + refundId;
+        return executeWithTokenRetry(operation,
+                () -> fetchRefund(e2eId, refundId),
+                (op, e) -> mapRefundLookupFailure(op, e2eId, refundId, e));
+    }
+
+    private EfiPayPixRefundResponse fetchRefund(String e2eId, String refundId) {
+        String bearer = tokenService.getAccessToken();
+        EfiPayPixRefundResponse response = restClient.get()
+                .uri("/v2/pix/{e2eId}/devolucao/{id}", e2eId, refundId)
+                .header("Authorization", "Bearer " + bearer)
+                .retrieve()
+                .body(EfiPayPixRefundResponse.class);
+        if (response == null) {
+            log.warn("EfiPay GET /v2/pix/{}/devolucao/{} returned empty body", e2eId, refundId);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "EfiPay returned empty refund lookup response");
+        }
+        return response;
+    }
+
+    private EfiPayPixDetailsResponse fetchPix(String e2eId, boolean exibirCodigoBanco) {
+        String bearer = tokenService.getAccessToken();
+        EfiPayPixDetailsResponse response = restClient.get()
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/v2/pix/{e2eId}");
+                    if (exibirCodigoBanco) {
+                        uriBuilder.queryParam("exibirCodigoBanco", "true");
+                    }
+                    return uriBuilder.build(e2eId);
+                })
+                .header("Authorization", "Bearer " + bearer)
+                .retrieve()
+                .body(EfiPayPixDetailsResponse.class);
+        if (response == null) {
+            log.warn("EfiPay GET /v2/pix/{} returned empty body", e2eId);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "EfiPay returned empty PIX lookup response");
+        }
+        return response;
+    }
+
+    private EfiPayPixChargeResponse putCharge(String txid, ChargeWirePayload payload) {
         String bearer = tokenService.getAccessToken();
         EfiPayPixChargeResponse response = restClient.put()
                 .uri("/v2/cob/{txid}", txid)
@@ -107,8 +202,26 @@ public class EfiPayPixClient {
         return response;
     }
 
-    private RuntimeException mapResponseFailure(String txid, RestClientResponseException e) {
-        String operation = "PUT /v2/cob/" + txid;
+    private EfiPayPixRefundResponse putRefund(String e2eId,
+                                              String refundId,
+                                              EfiPayPixRefundRequest request) {
+        String bearer = tokenService.getAccessToken();
+        EfiPayPixRefundResponse response = restClient.put()
+                .uri("/v2/pix/{e2eId}/devolucao/{id}", e2eId, refundId)
+                .header("Authorization", "Bearer " + bearer)
+                .body(request)
+                .retrieve()
+                .body(EfiPayPixRefundResponse.class);
+        if (response == null) {
+            log.warn("EfiPay PUT /v2/pix/{}/devolucao/{} returned empty body", e2eId, refundId);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "EfiPay returned empty refund response");
+        }
+        return response;
+    }
+
+    private RuntimeException mapChargeFailure(String operation, String txid,
+                                              RestClientResponseException e) {
         HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
         String body = e.getResponseBodyAsString();
         ErrorEnvelope error = parseError(body);
@@ -122,10 +235,104 @@ public class EfiPayPixClient {
                 "EfiPay rejected charge: " + truncate(body), e);
     }
 
-    private EfiPayPixChargeResponse rethrowUnexpected(String txid, RuntimeException e) {
-        log.warn("EfiPay PUT /v2/cob/{} threw {}", txid, e.toString());
-        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                "EfiPay charge request failed", e);
+    private RuntimeException mapRefundLookupFailure(String operation, String e2eId, String refundId,
+                                                    RestClientResponseException e) {
+        HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+        String body = e.getResponseBodyAsString();
+        ErrorEnvelope error = parseError(body);
+        if (status == HttpStatus.BAD_REQUEST && error != null) {
+            if ("devolucao_nao_encontrada".equals(error.nome())) {
+                log.info("EfiPay {} rejected: no refund found for (e2eId, refundId)", operation);
+                return new EfiPayDevolucaoNaoEncontradaException(e2eId, refundId,
+                        error.mensagem() != null ? error.mensagem() : "devolução não encontrada");
+            }
+            if ("pix_nao_encontrado".equals(error.nome())) {
+                log.info("EfiPay {} rejected: no PIX found for e2eId", operation);
+                return new EfiPayPixNaoEncontradoException(e2eId,
+                        error.mensagem() != null ? error.mensagem() : "PIX não encontrado");
+            }
+        }
+        logResponseFailure(operation, status, body);
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "EfiPay rejected refund lookup: " + truncate(body), e);
+    }
+
+    private RuntimeException mapPixLookupFailure(String operation, String e2eId,
+                                                 RestClientResponseException e) {
+        HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+        String body = e.getResponseBodyAsString();
+        ErrorEnvelope error = parseError(body);
+        if (status == HttpStatus.BAD_REQUEST && error != null
+                && "pix_nao_encontrado".equals(error.nome())) {
+            log.info("EfiPay {} rejected: no PIX found for e2eId", operation);
+            return new EfiPayPixNaoEncontradoException(e2eId,
+                    error.mensagem() != null ? error.mensagem() : "PIX não encontrado");
+        }
+        logResponseFailure(operation, status, body);
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "EfiPay rejected PIX lookup: " + truncate(body), e);
+    }
+
+    private RuntimeException mapRefundFailure(String operation, String e2eId, String refundId,
+                                              RestClientResponseException e) {
+        HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+        String body = e.getResponseBodyAsString();
+        ErrorEnvelope error = parseError(body);
+        if (error != null) {
+            if (status == HttpStatus.BAD_REQUEST && "pix_nao_encontrado".equals(error.nome())) {
+                log.info("EfiPay {} rejected: no PIX found for e2eId", operation);
+                return new EfiPayPixNaoEncontradoException(e2eId,
+                        error.mensagem() != null ? error.mensagem() : "PIX não encontrado");
+            }
+            if (status == HttpStatus.CONFLICT && "devolucao_id_duplicado".equals(error.nome())) {
+                log.info("EfiPay {} rejected: refund id already in use", operation);
+                return new EfiPayDevolucaoDuplicadoException(e2eId, refundId,
+                        error.mensagem() != null ? error.mensagem() : "devolução duplicada");
+            }
+        }
+        logResponseFailure(operation, status, body);
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "EfiPay rejected refund: " + truncate(body), e);
+    }
+
+    /**
+     * Shared upstream-call wrapper. On 401 it invalidates the cached token and retries once
+     * (covers token revocation, clock skew, secret rotation). Other failures are routed
+     * through {@code mapper} so each public method can attach its own typed exceptions for
+     * known business errors before falling through to a generic 502.
+     */
+    private <T> T executeWithTokenRetry(String operation,
+                                        UpstreamCall<T> call,
+                                        ResponseErrorMapper mapper) {
+        try {
+            return call.run();
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == HttpStatus.UNAUTHORIZED.value()) {
+                log.info("EfiPay {} returned 401 — invalidating cached token and retrying once",
+                        operation);
+                tokenService.invalidate();
+                try {
+                    return call.run();
+                } catch (RestClientResponseException retry) {
+                    throw mapper.map(operation, retry);
+                } catch (ResponseStatusException retry) {
+                    throw retry;
+                } catch (RuntimeException retry) {
+                    throw wrapUnexpected(operation, retry);
+                }
+            }
+            throw mapper.map(operation, e);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw wrapUnexpected(operation, e);
+        }
+    }
+
+    private static ResponseStatusException wrapUnexpected(String operation, RuntimeException e) {
+        log.warn("EfiPay {} threw {}", operation, e.toString());
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "EfiPay request failed", e);
     }
 
     private ErrorEnvelope parseError(String body) {
@@ -160,12 +367,12 @@ public class EfiPayPixClient {
     }
 
     /**
-     * Wire shape sent to EfiPay — same as {@link EfiPayPixChargeRequest} plus the merchant
-     * {@code chave} pulled from configuration. Kept private so the merchant key never leaks
-     * into the caller-facing API surface.
+     * Wire shape sent to EfiPay for charge creation — same as {@link EfiPayPixChargeRequest}
+     * plus the merchant {@code chave} pulled from configuration. Kept private so the merchant
+     * key never leaks into the caller-facing API surface.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record WirePayload(
+    private record ChargeWirePayload(
             EfiPayPixChargeRequest.Calendario calendario,
             EfiPayPixChargeRequest.Devedor devedor,
             EfiPayPixChargeRequest.Valor valor,
@@ -174,8 +381,8 @@ public class EfiPayPixClient {
             List<EfiPayPixChargeRequest.InfoAdicional> infoAdicionais,
             EfiPayPixChargeRequest.Loc loc
     ) {
-        static WirePayload from(EfiPayPixChargeRequest request, String chave) {
-            return new WirePayload(
+        static ChargeWirePayload from(EfiPayPixChargeRequest request, String chave) {
+            return new ChargeWirePayload(
                     request.calendario(),
                     request.devedor(),
                     request.valor(),
@@ -185,5 +392,15 @@ public class EfiPayPixClient {
                     request.loc()
             );
         }
+    }
+
+    @FunctionalInterface
+    private interface UpstreamCall<T> {
+        T run();
+    }
+
+    @FunctionalInterface
+    private interface ResponseErrorMapper {
+        RuntimeException map(String operation, RestClientResponseException e);
     }
 }
