@@ -21,3 +21,8 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+
+*.p12
+*.pem
+*.key

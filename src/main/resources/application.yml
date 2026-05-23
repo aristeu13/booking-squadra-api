@@ -99,3 +99,10 @@ app:
       payment-window-minutes: ${ASAAS_PAYMENT_WINDOW_MINUTES:10}
       due-days: ${ASAAS_DUE_DAYS:1}
       main-account-share-cents: ${ASAAS_MAIN_ACCOUNT_SHARE_CENTS:100}
+    efipay:
+      base-url: ${EFIPAY_BASE_URL:https://pix-h.api.efipay.com.br}
+      client-id: ${EFIPAY_CLIENT_ID:}
+      client-secret: ${EFIPAY_CLIENT_SECRET:}
+      certificate-pem: ${EFIPAY_CERTIFICATE_PEM:}
+      private-key-pem: ${EFIPAY_PRIVATE_KEY_PEM:}
+      pix-key: ${EFIPAY_PIX_KEY:}
