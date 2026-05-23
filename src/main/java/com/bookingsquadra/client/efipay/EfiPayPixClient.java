@@ -17,9 +17,10 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * EfiPay PIX API client. Exposes immediate-charge creation ({@code PUT /v2/cob/{txid}}),
  * partial/full refund requests ({@code PUT /v2/pix/{e2eId}/devolucao/{id}}), PIX lookup
- * ({@code GET /v2/pix/{e2eId}}), and refund lookup
- * ({@code GET /v2/pix/{e2eId}/devolucao/{id}}). All requests carry the Bearer token issued
- * by {@link EfiPayTokenService}; mTLS is enforced by the underlying {@code efiPayRestClient}.
+ * ({@code GET /v2/pix/{e2eId}}), refund lookup ({@code GET /v2/pix/{e2eId}/devolucao/{id}}),
+ * and location QR code lookup ({@code GET /v2/loc/{id}/qrcode}). All requests carry the
+ * Bearer token issued by {@link EfiPayTokenService}; mTLS is enforced by the underlying
+ * {@code efiPayRestClient}.
  *
  * <p>Idempotency note: PIX uses the path identifiers ({@code txid}, {@code refundId}) as
  * the idempotency token by design (BCB spec). EfiPay returns 409 on collision rather than
@@ -123,6 +124,42 @@ public class EfiPayPixClient {
         return executeWithTokenRetry(operation,
                 () -> fetchPix(e2eId, exibirCodigoBanco),
                 (op, e) -> mapPixLookupFailure(op, e2eId, e));
+    }
+
+    /**
+     * Fetches the QR code payload (BR Code string, embedded SVG image, and EfiPay-hosted
+     * visualization URL) for a previously-created location. The {@code locationId} is the
+     * value returned in {@link EfiPayPixChargeResponse.Loc#id()} when a charge was created
+     * with a {@code loc} attachment.
+     *
+     * @throws IllegalArgumentException when {@code locationId} is null or non-positive.
+     * @throws EfiPayLocationNaoEncontradaException when EfiPay returns {@code location_nao_encontrada}.
+     * @throws ResponseStatusException with 502 BAD_GATEWAY for any other upstream failure.
+     */
+    public EfiPayLocationQrCodeResponse getLocationQrCode(Long locationId) {
+        if (locationId == null || locationId <= 0) {
+            throw new IllegalArgumentException(
+                    "EfiPay locationId must be a positive long (got: " + locationId + ")");
+        }
+        String operation = "GET /v2/loc/" + locationId + "/qrcode";
+        return executeWithTokenRetry(operation,
+                () -> fetchLocationQrCode(locationId),
+                (op, e) -> mapLocationQrCodeFailure(op, locationId, e));
+    }
+
+    private EfiPayLocationQrCodeResponse fetchLocationQrCode(Long locationId) {
+        String bearer = tokenService.getAccessToken();
+        EfiPayLocationQrCodeResponse response = restClient.get()
+                .uri("/v2/loc/{id}/qrcode", locationId)
+                .header("Authorization", "Bearer " + bearer)
+                .retrieve()
+                .body(EfiPayLocationQrCodeResponse.class);
+        if (response == null) {
+            log.warn("EfiPay GET /v2/loc/{}/qrcode returned empty body", locationId);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "EfiPay returned empty location QR code response");
+        }
+        return response;
     }
 
     /**
@@ -233,6 +270,23 @@ public class EfiPayPixClient {
         logResponseFailure(operation, status, body);
         return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                 "EfiPay rejected charge: " + truncate(body), e);
+    }
+
+    private RuntimeException mapLocationQrCodeFailure(String operation, Long locationId,
+                                                      RestClientResponseException e) {
+        HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+        String body = e.getResponseBodyAsString();
+        ErrorEnvelope error = parseError(body);
+        // EfiPay's docs don't pin a status code for this error, so we match on `nome` only —
+        // `nome` is the canonical identifier in their error envelope.
+        if (error != null && "location_nao_encontrada".equals(error.nome())) {
+            log.info("EfiPay {} rejected: location not found", operation);
+            return new EfiPayLocationNaoEncontradaException(locationId,
+                    error.mensagem() != null ? error.mensagem() : "location não encontrada");
+        }
+        logResponseFailure(operation, status, body);
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "EfiPay rejected location QR code lookup: " + truncate(body), e);
     }
 
     private RuntimeException mapRefundLookupFailure(String operation, String e2eId, String refundId,
